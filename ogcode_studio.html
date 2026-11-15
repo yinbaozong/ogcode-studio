@@ -1,0 +1,2555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OGcode Studio — 3D 挤出实体路径渲染 &amp; Bambu Studio 兼容非平面切片器</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background-color: #090d16;
+      color: #e2e8f0;
+      overflow-x: hidden;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #1e293b;
+      border-radius: 999px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #10b981;
+      cursor: pointer;
+      border: 2px solid #090d16;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+      transition: transform 0.12s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.18);
+      background: #34d399;
+    }
+    .step-btn.active {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.15));
+      border-color: #10b981;
+      color: #ffffff;
+    }
+    .view-btn.active {
+      background-color: #10b981;
+      color: #06281e;
+      font-weight: 600;
+    }
+    .preset-card.active {
+      border-color: #10b981;
+      background-color: rgba(16, 185, 129, 0.12);
+    }
+    .swatch-btn.active {
+      outline: 2px solid #ffffff;
+      outline-offset: 2px;
+      transform: scale(1.12);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-slate-950">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+        <svg class="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c4.97 0 9 1.79 9 4s-4.03 4-9 4-9-1.79-9-4 4.03-4 9-4zm9 8c0 2.21-4.03 4-9 4s-9-1.79-9-4m18 5c0 2.21-4.03 4-9 4s-9-1.79-9-4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-base font-bold tracking-tight text-white">OGcode Studio</h1>
+          <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mono">v2.0 · 实体耗材渲染 &amp; Bambu Studio 秒开优化</span>
+        </div>
+        <p class="text-xs text-slate-400">纯净单色 3D 实体打印线管渲染 · 内置 Bambu Studio 原生层标记与头文件模板嫁接</p>
+      </div>
+    </div>
+
+    <!-- Quick Showcase Templates -->
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs text-slate-400 mr-1 hidden sm:inline">一键预设:</span>
+      <button id="btnPresetWavyRibs" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 transition">
+        🌊 非平面波浪凸线花瓶
+      </button>
+      <button id="btnPresetStitches" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/30 transition">
+        🪡 表面凸出针脚浮雕杯
+      </button>
+      <button id="btnPresetWoven" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 transition">
+        🧺 悬空编织镂空灯罩
+      </button>
+      <button id="btnPresetSunflower" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 transition">
+        🌻 黄金螺旋参数化盆器
+      </button>
+    </div>
+
+    <!-- Primary Export Actions -->
+    <div class="flex items-center gap-2">
+      <button id="btnExportSTL" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        导出变形 STL
+      </button>
+      <button id="btnExportGcode" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        直接导出 G-code
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace Container -->
+  <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0">
+
+    <!-- Left Column: 5-Step OGcode Parameter Pipeline (5 cols on lg) -->
+    <aside class="lg:col-span-5 xl:col-span-4 border-r border-slate-800/80 bg-slate-950/60 flex flex-col h-full overflow-hidden">
+
+      <!-- 5-Step Tab Selector -->
+      <div class="grid grid-cols-5 gap-1 p-2 bg-slate-900/90 border-b border-slate-800">
+        <button data-step="1" class="step-btn active flex flex-col items-center py-2 px-1 rounded-lg border border-transparent text-slate-400 hover:text-white transition">
+          <span class="text-[10px] mono uppercase tracking-wider opacity-75">01</span>
+          <span class="text-xs font-medium mt-0.5">轮廓/STL</span>
+        </button>
+        <button data-step="2" class="step-btn flex flex-col items-center py-2 px-1 rounded-lg border border-transparent text-slate-400 hover:text-white transition">
+          <span class="text-[10px] mono uppercase tracking-wider opacity-75">02</span>
+          <span class="text-xs font-medium mt-0.5">宏观图案</span>
+        </button>
+        <button data-step="3" class="step-btn flex flex-col items-center py-2 px-1 rounded-lg border border-transparent text-slate-400 hover:text-white transition">
+          <span class="text-[10px] mono uppercase tracking-wider opacity-75">03</span>
+          <span class="text-xs font-medium mt-0.5">非平面/凸线</span>
+        </button>
+        <button data-step="4" class="step-btn flex flex-col items-center py-2 px-1 rounded-lg border border-transparent text-slate-400 hover:text-white transition">
+          <span class="text-[10px] mono uppercase tracking-wider opacity-75">04</span>
+          <span class="text-xs font-medium mt-0.5">底面封底</span>
+        </button>
+        <button data-step="5" class="step-btn flex flex-col items-center py-2 px-1 rounded-lg border border-transparent text-slate-400 hover:text-white transition">
+          <span class="text-[10px] mono uppercase tracking-wider opacity-75">05</span>
+          <span class="text-xs font-medium mt-0.5">打印机/Gcode</span>
+        </button>
+      </div>
+
+      <!-- Scrollable Step Panels -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+
+        <!-- STEP 01: PROFILE & STL IMPORT -->
+        <section id="stepPanel1" class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-semibold text-white">Step 01 · 基础模型来源 (STL 导入或手绘母线)</h2>
+              <p class="text-xs text-slate-400">可上传任意现有 STL 网格提取 3D 截面，或直接在画布拖动控制点塑造回转体</p>
+            </div>
+          </div>
+
+          <!-- Source Mode Switch -->
+          <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <button id="btnSourceCurve" class="py-2 px-3 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 transition">
+              ✏️ 2D 交互母线绘制
+            </button>
+            <button id="btnSourceSTL" class="py-2 px-3 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition">
+              📦 导入本地 .STL 切片
+            </button>
+          </div>
+
+          <!-- STL Upload Box -->
+          <div id="stlUploadPanel" class="hidden space-y-3 p-3.5 rounded-xl bg-slate-900/90 border border-dashed border-emerald-500/40">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <h3 class="text-xs font-semibold text-emerald-300">上传或拖拽您的 .STL 模型文件</h3>
+                <p class="text-[11px] text-slate-400 mt-0.5">支持二进制与 ASCII STL。系统会自动沿 Z 轴进行极坐标射线求交切片，提取外表面并在其上叠加非平面波浪与凸出走线！</p>
+              </div>
+            </div>
+            <label class="flex flex-col items-center justify-center py-4 px-3 rounded-lg bg-slate-950/80 hover:bg-slate-900 border border-slate-800 cursor-pointer transition">
+              <svg class="w-6 h-6 text-emerald-400 mb-1" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+              </svg>
+              <span class="text-xs font-medium text-slate-200">点击选择 .STL 文件</span>
+              <span id="stlFileStatus" class="text-[11px] text-emerald-400 mono mt-1">当前状态: 未加载外部 STL（可点击下方生成测试 STL）</span>
+              <input id="inputSTLFile" type="file" accept=".stl" class="hidden" />
+            </label>
+            <div class="flex items-center gap-2">
+              <button id="btnLoadSampleSTL" class="flex-1 py-1.5 px-2.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition">
+                🎲 生成内置六棱扭曲测试 STL 并切片
+              </button>
+              <button id="btnDownloadSampleSTL" class="py-1.5 px-2.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                下载样本 .stl
+              </button>
+            </div>
+          </div>
+
+          <!-- 2D Profile Curve Editor Canvas -->
+          <div id="curveEditorPanel" class="space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-300 font-medium">2D 旋转轮廓母线编辑器 (双击空白处添加点 / 右键删除点)</span>
+              <div class="flex items-center gap-1.5">
+                <button id="btnCurveSmooth" class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px]">平滑样条</button>
+                <button id="btnCurveHard" class="px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[11px]">折线硬边</button>
+              </div>
+            </div>
+            <div class="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-950 flex justify-center">
+              <canvas id="profileCanvas" width="340" height="230" class="cursor-crosshair w-full max-w-[340px] h-[230px]"></canvas>
+              <div class="absolute bottom-2 left-2.5 pointer-events-none text-[10px] text-slate-400 mono bg-slate-950/80 px-1.5 py-0.5 rounded">
+                中心轴 X=0 ← | → 半径 R (mm)
+              </div>
+            </div>
+          </div>
+
+          <!-- Dimension & Geometry Sliders -->
+          <div class="space-y-3 pt-2 border-t border-slate-800/80">
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">模型总高度 (Height Z)</span>
+                <span id="valModelHeight" class="mono text-emerald-400">100 mm</span>
+              </div>
+              <input id="sliderModelHeight" type="range" min="40" max="240" step="2" value="100" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">基准半径缩放 (Radius Scale)</span>
+                <span id="valRadiusScale" class="mono text-emerald-400">100 %</span>
+              </div>
+              <input id="sliderRadiusScale" type="range" min="50" max="160" step="2" value="100" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">横截面多边形边数 (Polygon Sides · 120为圆)</span>
+                <span id="valPolySides" class="mono text-emerald-400">120 (圆形)</span>
+              </div>
+              <input id="sliderPolySides" type="range" min="3" max="120" step="1" value="120" />
+            </div>
+          </div>
+        </section>
+
+        <!-- STEP 02: MACRO PATTERNS -->
+        <section id="stepPanel2" class="hidden space-y-4">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Step 02 · 宏观几何表面图案 (Macro Patterns)</h2>
+            <p class="text-xs text-slate-400">重塑模型本体的宏观三维几何形态（此层变形既可输出到 G-code，也可保存在导出的 STL 中）</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button data-pattern="none" class="pattern-btn preset-card p-2.5 rounded-xl border border-slate-800 text-left transition">
+              <div class="text-xs font-semibold text-white">⭕ 无宏观图案 (None)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">保持原始母线或 STL 外形</div>
+            </button>
+            <button data-pattern="waves" class="pattern-btn preset-card active p-2.5 rounded-xl border border-slate-800 text-left transition">
+              <div class="text-xs font-semibold text-emerald-300">🌊 立体正弦波浪棱 (Waves)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">周向与纵向交织波浪曲面</div>
+            </button>
+            <button data-pattern="sunflower" class="pattern-btn preset-card p-2.5 rounded-xl border border-slate-800 text-left transition">
+              <div class="text-xs font-semibold text-amber-300">🌻 向日葵黄金螺旋 (Phyllotaxis)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">双向反向螺旋交叉菱形格</div>
+            </button>
+            <button data-pattern="lattice" class="pattern-btn preset-card p-2.5 rounded-xl border border-slate-800 text-left transition">
+              <div class="text-xs font-semibold text-cyan-300">💎 钻石蜂窝浮雕 (Diamond Cage)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">几何多面体折纸凹凸结构</div>
+            </button>
+          </div>
+
+          <div class="space-y-3 pt-2 border-t border-slate-800/80">
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">图案凹凸幅度 (Pattern Amplitude)</span>
+                <span id="valPatAmp" class="mono text-emerald-400">3.0 mm</span>
+              </div>
+              <input id="sliderPatAmp" type="range" min="0" max="12" step="0.2" value="3.0" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">周向波纹数量 (Angular Frequency)</span>
+                <span id="valPatFreq" class="mono text-emerald-400">10 棱/圈</span>
+              </div>
+              <input id="sliderPatFreq" type="range" min="1" max="36" step="1" value="10" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">纵向波纹频率 (Vertical Waves)</span>
+                <span id="valPatVertFreq" class="mono text-emerald-400">2.5 周期</span>
+              </div>
+              <input id="sliderPatVertFreq" type="range" min="0" max="12" step="0.5" value="2.5" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">整体螺旋扭转角 (Spiral Twist)</span>
+                <span id="valPatTwist" class="mono text-emerald-400">75 °</span>
+              </div>
+              <input id="sliderPatTwist" type="range" min="-360" max="360" step="15" value="75" />
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2.5">
+              <div class="text-xs font-medium text-cyan-300">🎯 局部区域吸引子控制 (Live Attractor Mask)</div>
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-slate-400">作用中心高度位置 (Center Z)</span>
+                  <span id="valAttCenter" class="mono text-cyan-300">50 %</span>
+                </div>
+                <input id="sliderAttCenter" type="range" min="0" max="100" step="5" value="50" />
+              </div>
+              <div>
+                <div class="flex justify-between text-xs mb-1">
+                  <span class="text-slate-400">作用高度范围 (Range Span)</span>
+                  <span id="valAttRange" class="mono text-cyan-300">100 %</span>
+                </div>
+                <input id="sliderAttRange" type="range" min="15" max="100" step="5" value="100" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- STEP 03: NON-PLANAR Z-WAVE & PROTRUDING WALL TEXTURES -->
+        <section id="stepPanel3" class="hidden space-y-4">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Step 03 · 真非平面 Z 轴波浪 &amp; 外墙凸出纹理走线</h2>
+            <p class="text-xs text-slate-400">直接操纵喷嘴三维坐标 $(R, \theta, Z)$ 与流量 $E$，并在右侧用实体耗材线管实时渲染每一根凸出走线</p>
+          </div>
+
+          <!-- Part A: True Non-Planar Z Modulation -->
+          <div class="p-3.5 rounded-xl bg-emerald-950/25 border border-emerald-500/30 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-emerald-300">〰️ 真·非平面三维波浪打印 (True Non-Planar Z-Wave)</span>
+              <span id="badgeNonPlanarSlope" class="text-[11px] mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">最大爬坡角: 8.5° (安全)</span>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-200">非平面 Z 轴上下起伏波幅 ($A_z$)</span>
+                <span id="valNpZAAmp" class="mono text-emerald-400">1.8 mm</span>
+              </div>
+              <input id="sliderNpZAmp" type="range" min="0" max="4.0" step="0.1" value="1.8" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-200">每圈非平面 Z 波浪周期数 ($N_z$)</span>
+                <span id="valNpZFreq" class="mono text-emerald-400">6 波/圈</span>
+              </div>
+              <input id="sliderNpZFreq" type="range" min="1" max="16" step="1" value="6" />
+            </div>
+
+            <label class="flex items-center justify-between pt-1 cursor-pointer">
+              <span class="text-xs text-slate-300">开启自适应体积挤出补偿 (Adaptive Volumetric E)</span>
+              <input id="chkAdaptiveE" type="checkbox" checked class="w-4 h-4 accent-emerald-500 rounded" />
+            </label>
+          </div>
+
+          <!-- Part B: Protruding Outer Wall Texture -->
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+            <div class="text-xs font-semibold text-cyan-300">🪡 外墙凸出纹理 / 编织路径调制 (Toolpath Texture)</div>
+            <div class="grid grid-cols-2 gap-1.5">
+              <button data-texture="stitches" class="tex-btn preset-card active p-2 rounded-lg border border-slate-800 text-left transition">
+                <div class="text-xs font-semibold text-white">🪡 表面凸出针脚/浮雕线</div>
+                <div class="text-[10px] text-slate-400">喷嘴周期性向外墙凸出打圈</div>
+              </button>
+              <button data-texture="woven" class="tex-btn preset-card p-2 rounded-lg border border-slate-800 text-left transition">
+                <div class="text-xs font-semibold text-amber-300">🧺 奇偶层反相编织网格</div>
+                <div class="text-[10px] text-slate-400">隔层交错搭桥形成编织孔</div>
+              </button>
+              <button data-texture="ripple" class="tex-btn preset-card p-2 rounded-lg border border-slate-800 text-left transition">
+                <div class="text-xs font-semibold text-cyan-300">〰️ 高频正弦波浪外墙</div>
+                <div class="text-[10px] text-slate-400">外墙连续高频波浪凸起纹</div>
+              </button>
+              <button data-texture="smooth" class="tex-btn preset-card p-2 rounded-lg border border-slate-800 text-left transition">
+                <div class="text-xs font-semibold text-slate-300">✨ 无微观调制 (仅平滑路径)</div>
+                <div class="text-[10px] text-slate-400">仅保留宏观几何与非平面Z波</div>
+              </button>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">外墙向外凸出深度 ($\Delta R_{\text{protrude}}$)</span>
+                <span id="valTexDepth" class="mono text-cyan-300">2.2 mm</span>
+              </div>
+              <input id="sliderTexDepth" type="range" min="0" max="4.5" step="0.1" value="2.2" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">每圈凸出特征次数 (Features / Turn)</span>
+                <span id="valTexCount" class="mono text-cyan-300">28 次/圈</span>
+              </div>
+              <input id="sliderTexCount" type="range" min="6" max="72" step="2" value="28" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">层间相位偏移比 (Phase Shift / Layer)</span>
+                <span id="valTexPhase" class="mono text-cyan-300">0.50 (交错编织)</span>
+              </div>
+              <input id="sliderTexPhase" type="range" min="0" max="1" step="0.05" value="0.50" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <div class="flex justify-between text-[11px] mb-1">
+                  <span class="text-slate-400">凸出区挤出倍率</span>
+                  <span id="valTexFlow" class="mono text-amber-300">135 %</span>
+                </div>
+                <input id="sliderTexFlow" type="range" min="90" max="200" step="5" value="135" />
+              </div>
+              <div>
+                <div class="flex justify-between text-[11px] mb-1">
+                  <span class="text-slate-400">凸出区降速冷却</span>
+                  <span id="valTexSpeed" class="mono text-amber-300">20 mm/s</span>
+                </div>
+                <input id="sliderTexSpeed" type="range" min="10" max="60" step="2" value="20" />
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">底/顶边缘平滑淡入淡出 (Edge Fade In/Out)</span>
+                <span id="valEdgeFade" class="mono text-cyan-300">15 %</span>
+              </div>
+              <input id="sliderEdgeFade" type="range" min="5" max="40" step="1" value="15" />
+            </div>
+          </div>
+        </section>
+
+        <!-- STEP 04: FLOOR GENERATOR -->
+        <section id="stepPanel4" class="hidden space-y-4">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Step 04 · 底部生成模式 (Floor Configuration)</h2>
+            <p class="text-xs text-slate-400">螺旋打印开始前的底层密封策略：可做密封花瓶底、带穿线孔的灯罩底，或全通透圆筒</p>
+          </div>
+
+          <div class="space-y-2">
+            <button data-floor="solid" class="floor-btn preset-card active w-full p-3 rounded-xl border border-slate-800 text-left transition flex items-center justify-between">
+              <div>
+                <div class="text-xs font-semibold text-white">💿 同心圆实心封底 (Concentric Solid Floor)</div>
+                <div class="text-[11px] text-slate-400">由外向内连续阿基米德螺线铺满底层，适合花瓶、笔筒与收纳罐</div>
+              </div>
+            </button>
+            <button data-floor="hole" class="floor-btn preset-card w-full p-3 rounded-xl border border-slate-800 text-left transition flex items-center justify-between">
+              <div>
+                <div class="text-xs font-semibold text-amber-300">🍩 中心留孔同心圆底 (Concentric with Center Hole)</div>
+                <div class="text-[11px] text-slate-400">底部预留固定直径圆孔，适合穿入 E27/E14 灯座或花盆排水孔</div>
+              </div>
+            </button>
+            <button data-floor="none" class="floor-btn preset-card w-full p-3 rounded-xl border border-slate-800 text-left transition flex items-center justify-between">
+              <div>
+                <div class="text-xs font-semibold text-cyan-300">⭕ 无底面直通模式 (No Floor / Open Cylinder)</div>
+                <div class="text-[11px] text-slate-400">直接从第一圈开始螺旋上升，适合上下通透灯罩或套筒</div>
+              </div>
+            </button>
+          </div>
+
+          <div class="space-y-3 pt-2 border-t border-slate-800/80">
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">底部中心圆孔直径 (Center Hole Diameter)</span>
+                <span id="valFloorHole" class="mono text-emerald-400">28 mm</span>
+              </div>
+              <input id="sliderFloorHole" type="range" min="6" max="60" step="2" value="28" />
+            </div>
+          </div>
+        </section>
+
+        <!-- STEP 05: PRINTER SETTINGS & BAMBU STUDIO COMPATIBILITY -->
+        <section id="stepPanel5" class="hidden space-y-4">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Step 05 · Bambu Studio 秒开导出模式 &amp; 模板嫁接</h2>
+            <p class="text-xs text-slate-400">解决 Bambu Studio `正在加载线段: 20% (未响应)`：Bambu 预览器不支持单圈内 Z 轴上下往复及螺旋模式标记，下方提供一键兼容方案</p>
+          </div>
+
+          <!-- Bambu Export Mode Selector -->
+          <div class="p-3 rounded-xl bg-slate-900 border border-emerald-500/40 space-y-2">
+            <div class="text-xs font-semibold text-emerald-300">🚀 选择 G-code 导出 Z 轴模式 (解决加载线段 20% 卡死)</div>
+            <div class="grid grid-cols-1 gap-1.5">
+              <button data-exportmode="bambu_preview_safe" class="exportmode-btn preset-card active p-2.5 rounded-lg border border-slate-800 text-left transition">
+                <div class="text-xs font-semibold text-white">✅ 模式 A：Bambu Studio 秒开预览模式 (逐层恒定 Z + 保留全部外墙凸出针脚/波浪)</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">每圈 Z 高度恒定递增（如 0.32, 0.64, 0.96mm）并关闭 spiral_mode 冲突标记，在 Bambu Studio 中 1 秒加载完成且完美保留外墙凸线与编织纹！</div>
+              </button>
+              <button data-exportmode="true_nonplanar" class="exportmode-btn preset-card p-2.5 rounded-lg border border-slate-800 text-left transition">
+                <div class="text-xs font-semibold text-amber-300">〰️ 模式 B：SD 卡直印 · 真非平面 Z 轴上下波浪模式 (True 3D Z-Wave)</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">每一步 G1 的 Z 轴实时上下正弦起伏。适合直接拷入打印机 SD 卡打印，或拖入网页端 gcode.ws / Prusa G-code Viewer 预览。</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Template G-code Grafting Upload -->
+          <div class="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/40 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-emerald-300">🧬 嫁接您的 Bambu Studio 模板 G-code (可选)</span>
+              <span id="templateStatusBadge" class="text-[10px] mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">当前: 内置拓竹标准头尾</span>
+            </div>
+            <p class="text-[11px] text-slate-400">如果您想 100% 使用您自己打印机（如 H2C / X1C / P1S / A1）的自动调平、擦嘴和 AMS 换料代码：只需在 Bambu Studio 随便切一个小方块并导出 `.gcode`，在此上传即可自动提取您的专属头尾代码！</p>
+            <label class="flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 cursor-pointer text-xs text-emerald-300 font-medium transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+              <span>上传参考 .gcode 自动提取头/尾代码</span>
+              <input id="inputTemplateGcode" type="file" accept=".gcode,.txt" class="hidden" />
+            </label>
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-300 mb-1.5 font-medium">选择打印机预设 (Printer Profile)</label>
+            <select id="selectPrinter" class="w-full rounded-xl bg-slate-900 border border-slate-700 text-xs text-white px-3 py-2 focus:outline-none focus:border-emerald-500">
+              <option value="bambu_256">Bambu Lab H2C / X1C / P1S / A1 (256 × 256 × 256 mm)</option>
+              <option value="bambu_mini">Bambu Lab A1 Mini (180 × 180 × 180 mm)</option>
+              <option value="prusa_mk4">Prusa Core One / MK4S (250 × 210 × 220 mm)</option>
+              <option value="generic_220">通用 Marlin / Klipper 机型 (220 × 220 × 250 mm)</option>
+            </select>
+          </div>
+
+          <!-- Export Segment Resolution Control (Crucial for file size & slicer speed) -->
+          <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-200 font-medium">每圈 G-code 采样点数 (控制文件体积与加载速度)</span>
+              <span id="valExportRes" class="mono text-emerald-400">84 点/圈 (~1.2 MB)</span>
+            </div>
+            <input id="sliderExportRes" type="range" min="48" max="240" step="12" value="84" />
+            <p class="text-[10px] text-slate-400">提示：120 点/圈即可完美还原非平面波浪与凸出针脚，且在 Bambu Studio 中 1 秒即可加载完成。</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">喷嘴直径 (Nozzle)</span>
+                <span id="valNozzle" class="mono text-emerald-400">0.4 mm</span>
+              </div>
+              <input id="sliderNozzle" type="range" min="0.4" max="1.2" step="0.2" value="0.4" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">挤出线宽 (Line Width)</span>
+                <span id="valLineWidth" class="mono text-emerald-400">0.65 mm</span>
+              </div>
+              <input id="sliderLineWidth" type="range" min="0.4" max="1.4" step="0.05" value="0.65" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">基准螺距层高 (Layer H)</span>
+                <span id="valLayerHeight" class="mono text-emerald-400">0.32 mm</span>
+              </div>
+              <input id="sliderLayerHeight" type="range" min="0.16" max="0.56" step="0.02" value="0.32" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">常规打印速度 (Speed)</span>
+                <span id="valPrintSpeed" class="mono text-emerald-400">45 mm/s</span>
+              </div>
+              <input id="sliderPrintSpeed" type="range" min="20" max="100" step="5" value="45" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">喷嘴温度 (Nozzle Temp)</span>
+                <span id="valNozzleTemp" class="mono text-amber-400">215 °C</span>
+              </div>
+              <input id="sliderNozzleTemp" type="range" min="190" max="260" step="5" value="215" />
+            </div>
+
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-300">热床温度 (Bed Temp)</span>
+                <span id="valBedTemp" class="mono text-amber-400">60 °C</span>
+              </div>
+              <input id="sliderBedTemp" type="range" min="40" max="90" step="5" value="60" />
+            </div>
+          </div>
+
+          <div class="space-y-2 pt-2 border-t border-slate-800">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium text-slate-300">自定义起始 G-code (Start G-code)</span>
+              <button id="btnCopyGcodePreview" class="text-[11px] text-emerald-400 hover:underline">复制 G-code 头部预览</button>
+            </div>
+            <textarea id="txtStartGcode" rows="4" class="w-full rounded-lg bg-slate-900 border border-slate-800 p-2 text-[11px] mono text-slate-300 focus:outline-none focus:border-emerald-500">;===== Bambu Lab Compatible Start G-code =====
+M140 S{BED_TEMP} ; 设置热床温度
+M104 S{NOZZLE_TEMP} ; 设置喷嘴温度
+G28 ; 归位全轴
+G90 ; 绝对坐标模式
+M83 ; 挤出机使用相对坐标模式 (Relative E)
+M190 S{BED_TEMP} ; 等待热床升温
+M109 S{NOZZLE_TEMP} ; 等待喷嘴升温
+G92 E0 ; 重置挤出量</textarea>
+
+            <div class="flex items-center justify-between pt-1">
+              <span class="text-xs font-medium text-slate-300">自定义结束 G-code (End G-code)</span>
+            </div>
+            <textarea id="txtEndGcode" rows="3" class="w-full rounded-lg bg-slate-900 border border-slate-800 p-2 text-[11px] mono text-slate-300 focus:outline-none focus:border-emerald-500">M400 ; 等待所有移动指令完成
+G91 ; 相对坐标
+G1 E-1.5 F2400 ; 回抽耗材防拉丝
+G1 Z10 F3000 ; 抬升喷嘴
+G90 ; 绝对坐标
+G0 X10 Y240 F6000 ; 停靠热床后方
+M104 S0 ; 关闭喷嘴加热
+M140 S0 ; 关闭热床加热
+M106 S0 ; 关闭风扇
+M84 ; 释放步进电机</textarea>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Bottom Telemetry Bar in Left Panel -->
+      <div class="p-3 bg-slate-900/95 border-t border-slate-800 grid grid-cols-3 gap-2 text-center">
+        <div class="p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
+          <div class="text-[10px] text-slate-400">总螺旋圈数 / 步数</div>
+          <div id="statTurns" class="text-xs font-semibold text-white mono mt-0.5">312 圈</div>
+        </div>
+        <div class="p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
+          <div class="text-[10px] text-slate-400">预计耗材长度 / 重量</div>
+          <div id="statFilament" class="text-xs font-semibold text-emerald-400 mono mt-0.5">12.4m / 37g</div>
+        </div>
+        <div class="p-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80">
+          <div class="text-[10px] text-slate-400">预计打印耗时</div>
+          <div id="statTime" class="text-xs font-semibold text-cyan-300 mono mt-0.5">46 min</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Column: Clean Monochromatic 3D Extruded Tube Viewport (7 cols on lg) -->
+    <main class="lg:col-span-7 xl:col-span-8 relative flex flex-col bg-[#0b101b] min-h-[540px]">
+
+      <!-- Floating Top Viewport Mode Switcher & Solid Color Swatches -->
+      <div class="absolute top-3 left-3 right-3 flex flex-wrap items-center justify-between gap-2 z-10 pointer-events-none">
+        <div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-800 pointer-events-auto shadow-xl">
+          <button data-view="tube" class="view-btn active px-3 py-1.5 rounded-lg text-xs transition">
+            🧶 3D 实体打印路径渲染 (真实单色线管)
+          </button>
+          <button data-view="toolpath" class="view-btn px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white transition">
+            🧵 1. 连续路径视图 (Toolpath)
+          </button>
+          <button data-view="speed" class="view-btn px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white transition">
+            🔥 2. 速度热力图 (Speed View)
+          </button>
+          <button data-view="nonplanar" class="view-btn px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white transition">
+            📐 3. 非平面 Z 波幅/流量视图
+          </button>
+          <button data-view="solid" class="view-btn px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:text-white transition">
+            🧊 4. 基础实体网格 (STL View)
+          </button>
+        </div>
+
+        <!-- Filament Monochromatic Color Picker & Camera Reset -->
+        <div class="flex items-center gap-2 pointer-events-auto bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 shadow-xl">
+          <span class="text-[11px] text-slate-300 mr-1">耗材单色:</span>
+          <button data-color="#00ae42" title="拓竹翠绿 (Bambu Green)" class="swatch-btn active w-4 h-4 rounded-full bg-[#00ae42] transition"></button>
+          <button data-color="#e2e8f0" title="哑光象牙白 (Matte Ivory White)" class="swatch-btn w-4 h-4 rounded-full bg-[#e2e8f0] transition"></button>
+          <button data-color="#d97757" title="陶土赤褐 (Terracotta Clay)" class="swatch-btn w-4 h-4 rounded-full bg-[#d97757] transition"></button>
+          <button data-color="#f59e0b" title="丝绸琥珀金 (Silk Gold)" class="swatch-btn w-4 h-4 rounded-full bg-[#f59e0b] transition"></button>
+          <button data-color="#64748b" title="太空金属灰 (Metallic Grey)" class="swatch-btn w-4 h-4 rounded-full bg-[#64748b] transition"></button>
+          <div class="h-3.5 w-[1px] bg-slate-700 mx-1"></div>
+          <button id="btnResetCamera" class="text-xs text-slate-300 hover:text-white transition">
+            重置视角
+          </button>
+        </div>
+      </div>
+
+      <!-- Clean Info Overlay -->
+      <div id="viewportLegend" class="absolute top-16 left-3 z-10 pointer-events-none bg-slate-950/85 backdrop-blur px-3 py-2 rounded-xl border border-slate-800/90 text-[11px] space-y-0.5">
+        <div id="legendTitle" class="font-semibold text-emerald-300">当前渲染: 单色 3D 实体挤出耗材路径 (真实层厚与凸出体积)</div>
+        <div id="legendRange" class="mono text-slate-400">可通过滚轮放大观察每一层非平面波浪与凸出针脚的立体堆叠细节</div>
+      </div>
+
+      <!-- Toast Notification -->
+      <div id="toastNotification" class="hidden absolute top-16 right-4 z-30 bg-emerald-500 text-slate-950 font-semibold text-xs px-4 py-2.5 rounded-xl shadow-2xl">
+        已生成并开始下载文件！
+      </div>
+
+      <!-- Three.js 3D Canvas Container -->
+      <div id="threeContainer" class="flex-1 w-full h-full cursor-grab active:cursor-grabbing"></div>
+
+      <!-- Bottom Print Simulation Scrubber & Nozzle Telemetry -->
+      <div class="p-3 bg-slate-950/90 backdrop-blur border-t border-slate-800/90 flex flex-wrap items-center gap-3 z-10">
+        <button id="btnPlaySim" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition">
+          <span id="iconPlaySim">▶</span>
+          <span id="txtPlaySim">模拟打印走线</span>
+        </button>
+
+        <div class="flex-1 flex items-center gap-3 min-w-[200px]">
+          <span class="text-[11px] text-slate-400 mono whitespace-nowrap">打印进度:</span>
+          <input id="sliderSimProgress" type="range" min="1" max="100" step="0.2" value="100" />
+          <span id="valSimProgress" class="text-xs font-semibold text-emerald-400 mono w-12 text-right">100%</span>
+        </div>
+
+        <div id="nozzleReadout" class="hidden sm:flex items-center gap-3 text-[11px] mono text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-800">
+          <span>喷嘴坐标: <strong id="readoutXYZ" class="text-white">X0.0 Y0.0 Z100.0</strong></span>
+          <span>瞬时速度: <strong id="readoutF" class="text-amber-300">45 mm/s</strong></span>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. APPLICATION STATE & DEFAULT BAMBU STUDIO COMPATIBLE SETTINGS
+    // =========================================================================
+    const state = {
+      step: 1,
+      sourceMode: 'curve', // 'curve' or 'stl'
+      curveSmooth: true,
+      controlPoints: [
+        { r: 35, z: 0.0 },
+        { r: 50, z: 0.30 },
+        { r: 35, z: 0.68 },
+        { r: 45, z: 1.0 }
+      ],
+      stlLoaded: false,
+      stlName: '',
+      stlGrid: null,
+      stlZBins: 120,
+      stlAngleBins: 180,
+
+      // Step 1 dimensions
+      modelHeight: 100,
+      radiusScale: 100,
+      polySides: 120,
+
+      // Step 2 Macro Pattern
+      patternType: 'waves', // 'none', 'waves', 'sunflower', 'lattice'
+      patAmp: 3.0,
+      patFreq: 10,
+      patVertFreq: 2.5,
+      patTwist: 75,
+      attCenter: 50,
+      attRange: 100,
+
+      // Step 3 Non-Planar & Toolpath Texture
+      npZAmp: 1.8,
+      npZFreq: 6,
+      adaptiveE: true,
+      textureType: 'stitches', // 'stitches', 'woven', 'ripple', 'smooth'
+      texDepth: 2.2,
+      texCount: 28,
+      texPhase: 0.50,
+      texFlow: 135,
+      texSpeed: 20,
+      edgeFade: 15,
+
+      // Step 4 Floor
+      floorType: 'solid', // 'solid', 'hole', 'none'
+      floorHole: 28,
+
+      // Step 5 Printer & Bambu Compatibility
+      printerProfile: 'bambu_256',
+      bambuExportMode: 'bambu_preview_safe', // 'bambu_preview_safe' or 'true_nonplanar'
+      bedWidth: 256,
+      bedDepth: 256,
+      exportSegsPerTurn: 84,
+      nozzleDia: 0.4,
+      lineWidth: 0.65,
+      layerHeight: 0.32,
+      printSpeed: 45,
+      nozzleTemp: 215,
+      bedTemp: 60,
+      customHeaderBlock: '',
+
+      // Viewport & Monochromatic 3D Bead Rendering
+      viewMode: 'tube', // 'tube' (default 3D extruded filament), 'toolpath', 'speed', 'nonplanar', 'solid'
+      filamentColor: '#00ae42',
+      simProgress: 100,
+      simPlaying: false
+    };
+
+    let generatedToolpath = [];
+    let totalSpiralTurns = 312;
+    let totalFilamentMm = 12400;
+    let totalFilamentGrams = 37;
+    let totalPrintSec = 2760;
+
+    function showToast(msg) {
+      const el = document.getElementById('toastNotification');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        el.classList.add('hidden');
+      }, 3400);
+    }
+
+    // =========================================================================
+    // 2. 2D PROFILE CURVE EDITOR & STL MESH SLICER
+    // =========================================================================
+    const profileCanvas = document.getElementById('profileCanvas');
+    const pCtx = profileCanvas.getContext('2d');
+    let draggingPointIdx = -1;
+
+    function evalCatmullRom(p0, p1, p2, p3, t) {
+      const t2 = t * t;
+      const t3 = t2 * t;
+      return 0.5 * (
+        (2 * p1) +
+        (-p0 + p2) * t +
+        (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+        (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+      );
+    }
+
+    function getBaseRadius(u, theta) {
+      let r = 40;
+      if (state.sourceMode === 'stl' && state.stlLoaded && state.stlGrid) {
+        const zF = Math.min(Math.max(u, 0), 0.9999) * (state.stlZBins - 1);
+        const z0 = Math.floor(zF);
+        const z1 = Math.min(z0 + 1, state.stlZBins - 1);
+        const tz = zF - z0;
+
+        let normA = (theta % (Math.PI * 2));
+        if (normA < 0) normA += Math.PI * 2;
+        const aF = (normA / (Math.PI * 2)) * state.stlAngleBins;
+        const a0 = Math.floor(aF) % state.stlAngleBins;
+        const a1 = (a0 + 1) % state.stlAngleBins;
+        const ta = aF - Math.floor(aF);
+
+        const r0 = state.stlGrid[z0][a0] * (1 - ta) + state.stlGrid[z0][a1] * ta;
+        const r1 = state.stlGrid[z1][a0] * (1 - ta) + state.stlGrid[z1][a1] * ta;
+        r = r0 * (1 - tz) + r1 * tz;
+      } else {
+        const pts = state.controlPoints.slice().sort((a, b) => a.z - b.z);
+        if (pts.length === 1) {
+          r = pts[0].r;
+        } else if (!state.curveSmooth || pts.length === 2) {
+          for (let i = 0; i < pts.length - 1; i++) {
+            if (u >= pts[i].z && u <= pts[i + 1].z) {
+              const span = Math.max(0.0001, pts[i + 1].z - pts[i].z);
+              const t = (u - pts[i].z) / span;
+              r = pts[i].r * (1 - t) + pts[i + 1].r * t;
+              break;
+            }
+          }
+        } else {
+          let seg = pts.length - 2;
+          for (let i = 0; i < pts.length - 1; i++) {
+            if (u >= pts[i].z && u <= pts[i + 1].z) {
+              seg = i;
+              break;
+            }
+          }
+          const p0 = pts[Math.max(0, seg - 1)];
+          const p1 = pts[seg];
+          const p2 = pts[seg + 1];
+          const p3 = pts[Math.min(pts.length - 1, seg + 2)];
+          const span = Math.max(0.0001, p2.z - p1.z);
+          const t = Math.min(1, Math.max(0, (u - p1.z) / span));
+          r = Math.max(6, evalCatmullRom(p0.r, p1.r, p2.r, p3.r, t));
+        }
+      }
+
+      r = r * (state.radiusScale / 100);
+
+      if (state.polySides < 100) {
+        const n = Math.max(3, state.polySides);
+        const sector = (2 * Math.PI) / n;
+        const halfSector = sector / 2;
+        let localA = (theta % sector);
+        if (localA < 0) localA += sector;
+        const polyFactor = Math.cos(halfSector) / Math.cos(localA - halfSector);
+        r *= polyFactor;
+      }
+
+      return Math.max(4, r);
+    }
+
+    function drawProfileCanvas() {
+      const w = profileCanvas.width;
+      const h = profileCanvas.height;
+      pCtx.clearRect(0, 0, w, h);
+
+      pCtx.strokeStyle = '#1e293b';
+      pCtx.lineWidth = 1;
+      for (let x = 40; x < w; x += 30) {
+        pCtx.beginPath(); pCtx.moveTo(x, 0); pCtx.lineTo(x, h); pCtx.stroke();
+      }
+      for (let y = 20; y < h; y += 30) {
+        pCtx.beginPath(); pCtx.moveTo(0, y); pCtx.lineTo(w, y); pCtx.stroke();
+      }
+
+      const axisX = 40;
+      const scaleR = 2.6;
+      const padY = 16;
+      const usableH = h - padY * 2;
+
+      pCtx.strokeStyle = '#10b981';
+      pCtx.setLineDash([4, 4]);
+      pCtx.beginPath(); pCtx.moveTo(axisX, 0); pCtx.lineTo(axisX, h); pCtx.stroke();
+      pCtx.setLineDash([]);
+
+      pCtx.fillStyle = 'rgba(16, 185, 129, 0.12)';
+      pCtx.beginPath();
+      pCtx.moveTo(axisX, h - padY);
+      const steps = 80;
+      for (let i = 0; i <= steps; i++) {
+        const u = i / steps;
+        const r = getBaseRadius(u, 0) / (state.radiusScale / 100);
+        pCtx.lineTo(axisX + r * scaleR, h - padY - u * usableH);
+      }
+      pCtx.lineTo(axisX, padY);
+      pCtx.closePath();
+      pCtx.fill();
+
+      pCtx.strokeStyle = '#34d399';
+      pCtx.lineWidth = 2.5;
+      pCtx.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const u = i / steps;
+        const r = getBaseRadius(u, 0) / (state.radiusScale / 100);
+        const px = axisX + r * scaleR;
+        const py = h - padY - u * usableH;
+        if (i === 0) pCtx.moveTo(px, py);
+        else pCtx.lineTo(px, py);
+      }
+      pCtx.stroke();
+
+      state.controlPoints.forEach((pt, idx) => {
+        const px = axisX + pt.r * scaleR;
+        const py = h - padY - pt.z * usableH;
+        pCtx.fillStyle = idx === draggingPointIdx ? '#ffffff' : '#10b981';
+        pCtx.strokeStyle = '#090d16';
+        pCtx.lineWidth = 2;
+        pCtx.beginPath();
+        pCtx.arc(px, py, 6, 0, Math.PI * 2);
+        pCtx.fill();
+        pCtx.stroke();
+      });
+    }
+
+    function canvasEventToPoint(e) {
+      const rect = profileCanvas.getBoundingClientRect();
+      const scaleX = profileCanvas.width / rect.width;
+      const scaleY = profileCanvas.height / rect.height;
+      return {
+        cx: (e.clientX - rect.left) * scaleX,
+        cy: (e.clientY - rect.top) * scaleY
+      };
+    }
+
+    profileCanvas.addEventListener('mousedown', (e) => {
+      const { cx, cy } = canvasEventToPoint(e);
+      const axisX = 40, scaleR = 2.6, padY = 16;
+      const usableH = profileCanvas.height - padY * 2;
+      for (let i = 0; i < state.controlPoints.length; i++) {
+        const pt = state.controlPoints[i];
+        const px = axisX + pt.r * scaleR;
+        const py = profileCanvas.height - padY - pt.z * usableH;
+        if (Math.hypot(cx - px, cy - py) < 12) {
+          if (e.button === 2 && state.controlPoints.length > 2 && i > 0 && i < state.controlPoints.length - 1) {
+            state.controlPoints.splice(i, 1);
+            drawProfileCanvas();
+            rebuildToolpathAndScene();
+            return;
+          }
+          draggingPointIdx = i;
+          return;
+        }
+      }
+    });
+
+    profileCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    profileCanvas.addEventListener('dblclick', (e) => {
+      const { cx, cy } = canvasEventToPoint(e);
+      const axisX = 40, scaleR = 2.6, padY = 16;
+      const usableH = profileCanvas.height - padY * 2;
+      const r = Math.min(95, Math.max(10, (cx - axisX) / scaleR));
+      const z = Math.min(0.98, Math.max(0.02, (profileCanvas.height - padY - cy) / usableH));
+      state.controlPoints.push({ r, z });
+      state.controlPoints.sort((a, b) => a.z - b.z);
+      drawProfileCanvas();
+      rebuildToolpathAndScene();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (draggingPointIdx < 0) return;
+      const { cx, cy } = canvasEventToPoint(e);
+      const axisX = 40, scaleR = 2.6, padY = 16;
+      const usableH = profileCanvas.height - padY * 2;
+      const pt = state.controlPoints[draggingPointIdx];
+      pt.r = Math.min(95, Math.max(8, (cx - axisX) / scaleR));
+      if (draggingPointIdx === 0) pt.z = 0.0;
+      else if (draggingPointIdx === state.controlPoints.length - 1) pt.z = 1.0;
+      else {
+        const minZ = state.controlPoints[draggingPointIdx - 1].z + 0.03;
+        const maxZ = state.controlPoints[draggingPointIdx + 1].z - 0.03;
+        pt.z = Math.min(maxZ, Math.max(minZ, (profileCanvas.height - padY - cy) / usableH));
+      }
+      drawProfileCanvas();
+      rebuildToolpathAndScene();
+    });
+
+    window.addEventListener('mouseup', () => { draggingPointIdx = -1; });
+
+    // =========================================================================
+    // 3. REAL STL PARSER & CYLINDRICAL SLICER
+    // =========================================================================
+    function parseSTLBuffer(arrayBuffer) {
+      const dataView = new DataView(arrayBuffer);
+      const triangles = [];
+      let isBinary = false;
+      if (arrayBuffer.byteLength >= 84) {
+        const triCount = dataView.getUint32(80, true);
+        if (84 + triCount * 50 === arrayBuffer.byteLength) isBinary = true;
+      }
+
+      if (isBinary) {
+        const triCount = dataView.getUint32(80, true);
+        let offset = 84;
+        for (let i = 0; i < triCount; i++) {
+          const v1 = [dataView.getFloat32(offset + 12, true), dataView.getFloat32(offset + 16, true), dataView.getFloat32(offset + 20, true)];
+          const v2 = [dataView.getFloat32(offset + 24, true), dataView.getFloat32(offset + 28, true), dataView.getFloat32(offset + 32, true)];
+          const v3 = [dataView.getFloat32(offset + 36, true), dataView.getFloat32(offset + 40, true), dataView.getFloat32(offset + 44, true)];
+          triangles.push([v1, v2, v3]);
+          offset += 50;
+        }
+      } else {
+        const text = new TextDecoder().decode(arrayBuffer);
+        const vertexRegex = /vertex\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)/g;
+        let match;
+        const verts = [];
+        while ((match = vertexRegex.exec(text)) !== null) {
+          verts.push([parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])]);
+        }
+        for (let i = 0; i + 2 < verts.length; i += 3) {
+          triangles.push([verts[i], verts[i + 1], verts[i + 2]]);
+        }
+      }
+      return triangles;
+    }
+
+    function sliceTrianglesToCylindricalGrid(triangles, fileName) {
+      if (!triangles || triangles.length === 0) {
+        showToast('未能从 STL 文件中解析到有效三角面片');
+        return;
+      }
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const tri of triangles) {
+        for (const v of tri) {
+          if (v[0] < minX) minX = v[0];
+          if (v[0] > maxX) maxX = v[0];
+          if (v[1] < minY) minY = v[1];
+          if (v[1] > maxY) maxY = v[1];
+          if (v[2] < minZ) minZ = v[2];
+          if (v[2] > maxZ) maxZ = v[2];
+        }
+      }
+      const cx = 0.5 * (minX + maxX);
+      const cy = 0.5 * (minY + maxY);
+      const spanZ = Math.max(1e-4, maxZ - minZ);
+      const maxSpanXY = Math.max(1e-4, Math.max(maxX - minX, maxY - minY));
+      const normScaleXY = 85 / maxSpanXY;
+
+      const zBins = state.stlZBins;
+      const aBins = state.stlAngleBins;
+      const grid = Array.from({ length: zBins }, () => new Float32Array(aBins).fill(0));
+
+      for (const tri of triangles) {
+        const p0 = [(tri[0][0] - cx) * normScaleXY, (tri[0][1] - cy) * normScaleXY, (tri[0][2] - minZ) / spanZ];
+        const p1 = [(tri[1][0] - cx) * normScaleXY, (tri[1][1] - cy) * normScaleXY, (tri[1][2] - minZ) / spanZ];
+        const p2 = [(tri[2][0] - cx) * normScaleXY, (tri[2][1] - cy) * normScaleXY, (tri[2][2] - minZ) / spanZ];
+
+        const tMinZ = Math.min(p0[2], p1[2], p2[2]);
+        const tMaxZ = Math.max(p0[2], p1[2], p2[2]);
+        const iStart = Math.max(0, Math.floor(tMinZ * (zBins - 1)));
+        const iEnd = Math.min(zBins - 1, Math.ceil(tMaxZ * (zBins - 1)));
+
+        for (let iz = iStart; iz <= iEnd; iz++) {
+          const zLevel = iz / (zBins - 1);
+          const pts = [];
+          const edges = [[p0, p1], [p1, p2], [p2, p0]];
+          for (const [a, b] of edges) {
+            if ((a[2] <= zLevel && b[2] >= zLevel) || (b[2] <= zLevel && a[2] >= zLevel)) {
+              const dz = b[2] - a[2];
+              if (Math.abs(dz) > 1e-6) {
+                const t = (zLevel - a[2]) / dz;
+                if (t >= 0 && t <= 1) pts.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+              }
+            }
+          }
+          if (pts.length >= 2) {
+            for (let s = 0; s <= 12; s++) {
+              const u = s / 12;
+              const x = pts[0][0] + u * (pts[1][0] - pts[0][0]);
+              const y = pts[0][1] + u * (pts[1][1] - pts[0][1]);
+              const r = Math.hypot(x, y);
+              let ang = Math.atan2(y, x);
+              if (ang < 0) ang += Math.PI * 2;
+              const ia = Math.floor((ang / (Math.PI * 2)) * aBins) % aBins;
+              if (r > grid[iz][ia]) grid[iz][ia] = r;
+            }
+          }
+        }
+      }
+
+      for (let iz = 0; iz < zBins; iz++) {
+        let fallbackR = 35;
+        for (let ia = 0; ia < aBins; ia++) {
+          if (grid[iz][ia] > 2) { fallbackR = grid[iz][ia]; break; }
+        }
+        for (let ia = 0; ia < aBins; ia++) {
+          if (grid[iz][ia] <= 2) grid[iz][ia] = fallbackR;
+          else fallbackR = grid[iz][ia];
+        }
+      }
+
+      state.stlGrid = grid;
+      state.stlLoaded = true;
+      state.stlName = fileName;
+      state.sourceMode = 'stl';
+      document.getElementById('stlFileStatus').textContent = `已加载 STL: ${fileName} (${triangles.length} 个三角面片)`;
+      rebuildToolpathAndScene();
+      showToast(`成功切片导入 STL: ${fileName}`);
+    }
+
+    function generateBuiltInTwistedHexSTL() {
+      const triangles = [];
+      const layers = 36, sides = 6, height = 100;
+      function ringPoint(iz, iside) {
+        const u = iz / layers;
+        const z = u * height;
+        const baseR = 36 + 10 * Math.sin(u * Math.PI * 1.4);
+        const angle = (iside / sides) * Math.PI * 2 + u * (Math.PI / 2.5);
+        return [baseR * Math.cos(angle), baseR * Math.sin(angle), z];
+      }
+      for (let iz = 0; iz < layers; iz++) {
+        for (let iside = 0; iside < sides; iside++) {
+          const nextSide = (iside + 1) % sides;
+          const p00 = ringPoint(iz, iside);
+          const p01 = ringPoint(iz, nextSide);
+          const p10 = ringPoint(iz + 1, iside);
+          const p11 = ringPoint(iz + 1, nextSide);
+          triangles.push([p00, p01, p11]);
+          triangles.push([p00, p11, p10]);
+        }
+      }
+      return triangles;
+    }
+
+    // =========================================================================
+    // 4. CORE MATHEMATICAL ENGINE: MACRO PATTERNS + NON-PLANAR Z + TEXTURES
+    // =========================================================================
+    function computeAttractorEnvelope(u) {
+      const center = state.attCenter / 100;
+      const halfSpan = Math.max(0.08, (state.attRange / 100) * 0.5);
+      const dist = Math.abs(u - center) / halfSpan;
+      if (dist >= 1.0) return 0.0;
+      const c = Math.cos(dist * Math.PI * 0.5);
+      return c * c;
+    }
+
+    function computeEdgeFadeEnvelope(u) {
+      const fade = Math.max(0.02, state.edgeFade / 100);
+      let env = 1.0;
+      if (u < fade) env = u / fade;
+      else if (u > 1.0 - fade) env = (1.0 - u) / fade;
+      env = Math.max(0, Math.min(1, env));
+      return env * env * (3 - 2 * env);
+    }
+
+    function computeMacroPatternOffset(u, theta) {
+      if (state.patternType === 'none' || state.patAmp <= 0.01) return 0;
+      const attEnv = computeAttractorEnvelope(u);
+      const twistRad = (state.patTwist * Math.PI) / 180;
+      const twistedTheta = theta + u * twistRad;
+      const freq = state.patFreq;
+      const vFreq = state.patVertFreq * Math.PI * 2;
+
+      let val = 0;
+      if (state.patternType === 'waves') {
+        val = Math.sin(freq * twistedTheta) * Math.cos(u * vFreq);
+      } else if (state.patternType === 'sunflower') {
+        const s1 = Math.sin(freq * theta + u * twistRad * 2.2);
+        const s2 = Math.sin(freq * theta - u * twistRad * 2.2);
+        val = 0.5 * (s1 + s2);
+      } else if (state.patternType === 'lattice') {
+        const w1 = Math.abs(((freq * twistedTheta / Math.PI) % 2 + 2) % 2 - 1) * 2 - 1;
+        const w2 = Math.abs(((u * state.patVertFreq * 2) % 2 + 2) % 2 - 1) * 2 - 1;
+        val = 0.5 * (w1 * w2);
+      }
+      return state.patAmp * attEnv * val;
+    }
+
+    function computeToolpathTexture(u, theta, layerFloat) {
+      const fadeEnv = computeEdgeFadeEnvelope(u);
+      if (state.textureType === 'smooth' || state.texDepth <= 0.01 || fadeEnv <= 0.001) {
+        return { dr: 0, flowMult: 1.0, speedMmS: state.printSpeed, isFeature: false };
+      }
+
+      const count = state.texCount;
+      const layerIdx = Math.floor(layerFloat);
+      const phaseShift = layerIdx * state.texPhase * Math.PI * 2;
+      const phaseAngle = count * theta + phaseShift;
+
+      let dr = 0;
+      let isFeature = false;
+
+      if (state.textureType === 'stitches') {
+        const cyc = ((phaseAngle / (Math.PI * 2)) % 1 + 1) % 1;
+        if (cyc < 0.36) {
+          const pulse = Math.sin((cyc / 0.36) * Math.PI);
+          dr = state.texDepth * fadeEnv * Math.pow(pulse, 1.4);
+          isFeature = pulse > 0.35;
+        }
+      } else if (state.textureType === 'woven') {
+        const wave = Math.sin(phaseAngle);
+        dr = state.texDepth * fadeEnv * wave;
+        isFeature = Math.abs(wave) > 0.5;
+      } else if (state.textureType === 'ripple') {
+        const wave = 0.5 * (1 + Math.sin(phaseAngle));
+        dr = state.texDepth * fadeEnv * Math.pow(wave, 2);
+        isFeature = wave > 0.65;
+      }
+
+      const flowMult = isFeature ? (state.texFlow / 100) : 1.0;
+      const speedMmS = isFeature ? state.texSpeed : state.printSpeed;
+      return { dr, flowMult, speedMmS, isFeature };
+    }
+
+    function computeNonPlanarZ(u, theta, baseZ) {
+      if (state.npZAmp <= 0.01) {
+        return { z: baseZ, dz: 0, localHeightRatio: 1.0 };
+      }
+      const fadeEnv = computeEdgeFadeEnvelope(u);
+      const wave = Math.sin(state.npZFreq * theta + u * Math.PI * 2);
+      const dz = state.npZAmp * fadeEnv * wave;
+      const dEnvDu = (u < 0.5) ? (fadeEnv / Math.max(0.05, u)) : (-fadeEnv / Math.max(0.05, 1 - u));
+      const localHeightRatio = Math.max(0.35, Math.min(1.85, 1.0 + (dz / state.modelHeight) * dEnvDu * 0.4));
+      return {
+        z: Math.max(0.2, baseZ + dz),
+        dz,
+        localHeightRatio
+      };
+    }
+
+    function buildFullToolpath() {
+      const pts = [];
+      const H = state.modelHeight;
+      const layerH = state.layerHeight;
+      const totalTurns = Math.max(20, Math.floor(H / layerH));
+      totalSpiralTurns = totalTurns;
+      const segsPerTurn = state.exportSegsPerTurn;
+
+      // 1. Floor generation (Layer 0)
+      if (state.floorType !== 'none') {
+        const outerR = getBaseRadius(0, 0);
+        const innerR = state.floorType === 'hole' ? Math.min(outerR - 2, state.floorHole * 0.5) : 1.2;
+        const floorTurns = Math.max(2, Math.floor((outerR - innerR) / state.lineWidth));
+        const floorSegs = floorTurns * 40;
+        for (let i = 0; i <= floorSegs; i++) {
+          const t = i / floorSegs;
+          const ang = t * floorTurns * Math.PI * 2;
+          const r = innerR + t * (outerR - innerR);
+          pts.push({
+            x: r * Math.cos(ang),
+            y: r * Math.sin(ang),
+            z: layerH,
+            dz: 0,
+            speed: Math.min(30, state.printSpeed),
+            flowMult: 1.05,
+            layerIndex: 0,
+            layerRatio: 0,
+            isFloor: true
+          });
+        }
+      }
+
+      // 2. Spiral + Non-planar Z + Protruding Wall
+      const totalSteps = totalTurns * segsPerTurn;
+      const avgR = getBaseRadius(0.5, 0);
+      const maxSlopeRad = Math.atan2(state.npZAmp * state.npZFreq, Math.max(15, avgR));
+      const maxSlopeDeg = (maxSlopeRad * 180) / Math.PI;
+      const slopeBadge = document.getElementById('badgeNonPlanarSlope');
+      if (slopeBadge) {
+        if (maxSlopeDeg > 24) {
+          slopeBadge.textContent = `最大爬坡角: ${maxSlopeDeg.toFixed(1)}° (注意喷嘴干涉)`;
+          slopeBadge.className = 'text-[11px] mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40';
+        } else {
+          slopeBadge.textContent = `最大爬坡角: ${maxSlopeDeg.toFixed(1)}° (安全可打印)`;
+          slopeBadge.className = 'text-[11px] mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300';
+        }
+      }
+
+      for (let step = 0; step <= totalSteps; step++) {
+        const layerFloat = step / segsPerTurn;
+        const turnIdx = Math.floor(layerFloat) + 1;
+        const u = layerFloat / totalTurns;
+        const theta = layerFloat * Math.PI * 2;
+        const baseZ = Math.max(layerH, u * H);
+
+        const baseR = getBaseRadius(u, theta);
+        const patOffset = computeMacroPatternOffset(u, theta);
+        const tex = computeToolpathTexture(u, theta, layerFloat);
+        const npZ = computeNonPlanarZ(u, theta, baseZ);
+
+        const finalR = Math.max(3, baseR + patOffset + tex.dr);
+        const x = finalR * Math.cos(theta);
+        const y = finalR * Math.sin(theta);
+        const effectiveFlow = tex.flowMult * (state.adaptiveE ? npZ.localHeightRatio : 1.0);
+
+        pts.push({
+          x,
+          y,
+          z: npZ.z,
+          dz: npZ.dz,
+          speed: tex.speedMmS,
+          flowMult: effectiveFlow,
+          layerIndex: turnIdx,
+          layerRatio: u,
+          isFloor: false
+        });
+      }
+
+      generatedToolpath = pts;
+      updateTelemetryStats(pts, totalTurns);
+      return pts;
+    }
+
+    function updateTelemetryStats(pts, totalTurns) {
+      let totalDistMm = 0;
+      let totalTimeSec = 0;
+      let totalVolMm3 = 0;
+
+      for (let i = 1; i < pts.length; i++) {
+        const p0 = pts[i - 1];
+        const p1 = pts[i];
+        const d = Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+        totalDistMm += d;
+        const spd = Math.max(5, p1.speed);
+        totalTimeSec += d / spd;
+        totalVolMm3 += d * state.lineWidth * state.layerHeight * p1.flowMult;
+      }
+
+      const filamentCrossSection = Math.PI * Math.pow(1.75 * 0.5, 2);
+      totalFilamentMm = totalVolMm3 / filamentCrossSection;
+      const filamentMeters = totalFilamentMm / 1000;
+      totalFilamentGrams = (totalVolMm3 / 1000) * 1.24;
+      totalPrintSec = Math.round(totalTimeSec);
+      const minutes = Math.max(1, Math.round(totalTimeSec / 60));
+
+      document.getElementById('statTurns').textContent = `${totalTurns} 圈`;
+      document.getElementById('statFilament').textContent = `${filamentMeters.toFixed(1)}m / ${Math.round(totalFilamentGrams)}g`;
+      document.getElementById('statTime').textContent = minutes >= 60
+        ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+        : `${minutes} min`;
+
+      const estMB = ((pts.length * 46) / (1024 * 1024)).toFixed(1);
+      const resLabel = document.getElementById('valExportRes');
+      if (resLabel) {
+        resLabel.textContent = `${state.exportSegsPerTurn} 点/圈 (~${estMB} MB)`;
+      }
+    }
+
+    // =========================================================================
+    // 5. THREE.JS 3D VIEWPORT: REALISTIC MONOCHROMATIC EXTRUDED FILAMENT BEAD MESH
+    // =========================================================================
+    const threeContainer = document.getElementById('threeContainer');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b101b);
+
+    const camera = new THREE.PerspectiveCamera(40, 1, 1, 2000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    threeContainer.appendChild(renderer.domElement);
+
+    // Studio 3-point lighting to bring out realistic 3D layer lines & protruding stitches
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x1e293b, 0.75);
+    hemiLight.position.set(0, 300, 0);
+    scene.add(hemiLight);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.95);
+    keyLight.position.set(160, 260, 200);
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0x94a3b8, 0.55);
+    rimLight.position.set(-180, 100, -160);
+    scene.add(rimLight);
+
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    fillLight.position.set(0, -120, 150);
+    scene.add(fillLight);
+
+    const camOrbit = {
+      theta: Math.PI * 0.25,
+      phi: Math.PI * 0.36,
+      radius: 225,
+      targetY: 50,
+      isDragging: false,
+      isPanning: false,
+      lastX: 0,
+      lastY: 0
+    };
+
+    function updateCameraTransform() {
+      const sinPhi = Math.sin(camOrbit.phi);
+      camera.position.x = camOrbit.radius * sinPhi * Math.sin(camOrbit.theta);
+      camera.position.y = camOrbit.targetY + camOrbit.radius * Math.cos(camOrbit.phi);
+      camera.position.z = camOrbit.radius * sinPhi * Math.cos(camOrbit.theta);
+      camera.lookAt(0, camOrbit.targetY, 0);
+    }
+
+    threeContainer.addEventListener('mousedown', (e) => {
+      camOrbit.isDragging = true;
+      camOrbit.isPanning = e.button === 2 || e.shiftKey;
+      camOrbit.lastX = e.clientX;
+      camOrbit.lastY = e.clientY;
+    });
+    threeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('mousemove', (e) => {
+      if (!camOrbit.isDragging) return;
+      const dx = e.clientX - camOrbit.lastX;
+      const dy = e.clientY - camOrbit.lastY;
+      camOrbit.lastX = e.clientX;
+      camOrbit.lastY = e.clientY;
+
+      if (camOrbit.isPanning) {
+        camOrbit.targetY = Math.max(0, Math.min(220, camOrbit.targetY + dy * 0.35));
+      } else {
+        camOrbit.theta -= dx * 0.008;
+        camOrbit.phi = Math.max(0.12, Math.min(Math.PI * 0.49, camOrbit.phi - dy * 0.007));
+      }
+      updateCameraTransform();
+    });
+    window.addEventListener('mouseup', () => { camOrbit.isDragging = false; });
+    threeContainer.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      camOrbit.radius = Math.max(60, Math.min(550, camOrbit.radius + e.deltaY * 0.16));
+      updateCameraTransform();
+    }, { passive: false });
+
+    let bedGroup = new THREE.Group();
+    scene.add(bedGroup);
+
+    function rebuildBedGrid() {
+      scene.remove(bedGroup);
+      bedGroup = new THREE.Group();
+      const gridHelper = new THREE.GridHelper(state.bedWidth, 16, 0x334155, 0x1e293b);
+      bedGroup.add(gridHelper);
+
+      const plateGeo = new THREE.PlaneGeometry(state.bedWidth, state.bedDepth);
+      const plateMat = new THREE.MeshBasicMaterial({
+        color: 0x0f172a,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide
+      });
+      const plateMesh = new THREE.Mesh(plateGeo, plateMat);
+      plateMesh.rotation.x = -Math.PI / 2;
+      plateMesh.position.y = -0.2;
+      bedGroup.add(plateMesh);
+      scene.add(bedGroup);
+    }
+
+    let activeRenderObject = null;
+    let totalRenderIndices = 0;
+
+    const nozzleGroup = new THREE.Group();
+    const nozzleCone = new THREE.Mesh(
+      new THREE.ConeGeometry(2.4, 7.5, 20),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.65, roughness: 0.25 })
+    );
+    nozzleCone.rotation.x = Math.PI;
+    nozzleCone.position.y = 3.75;
+    nozzleGroup.add(nozzleCone);
+    scene.add(nozzleGroup);
+
+    function colorLerpHSL(h1, s1, l1, h2, s2, l2, t) {
+      const c = new THREE.Color();
+      c.setHSL(h1 + (h2 - h1) * t, s1 + (s2 - s1) * t, l1 + (l2 - l1) * t);
+      return c;
+    }
+
+    // Build a continuous 4-sided diamond/elliptical 3D tube along the toolpath points
+    // This makes every single layer, non-planar wave, and protruding stitch look like real extruded plastic!
+    function buildExtrudedBeadGeometry(pts) {
+      // Limit to ~32000 path nodes for smooth 60fps 3D tube generation
+      const maxTubeNodes = 32000;
+      const stride = Math.max(1, Math.floor(pts.length / maxTubeNodes));
+      const sampled = [];
+      for (let i = 0; i < pts.length; i += stride) {
+        sampled.push(pts[i]);
+      }
+      if (sampled[sampled.length - 1] !== pts[pts.length - 1]) {
+        sampled.push(pts[pts.length - 1]);
+      }
+
+      const N = sampled.length;
+      const positions = new Float32Array(N * 4 * 3);
+      const indices = new Uint32Array((N - 1) * 4 * 6);
+
+      const halfW = state.lineWidth * 0.52;
+      // Slightly exaggerate visual bead height when layerHeight is small so layers remain crisp and distinct
+      const halfH = Math.max(state.layerHeight * 0.58, 0.18);
+
+      for (let i = 0; i < N; i++) {
+        const p = sampled[i];
+        const pNext = sampled[Math.min(N - 1, i + 1)];
+        const pPrev = sampled[Math.max(0, i - 1)];
+
+        // Tangent in printer coordinates
+        let tx = pNext.x - pPrev.x;
+        let ty = pNext.y - pPrev.y;
+        const tLen = Math.hypot(tx, ty) || 1;
+        tx /= tLen;
+        ty /= tLen;
+
+        // Outward radial normal in XY plane: (-ty, tx)
+        const nx = -ty;
+        const ny = tx;
+
+        // Scale bead width slightly by flow multiplier so protruding stitches look visibly thicker
+        const flowScale = Math.sqrt(Math.max(0.7, Math.min(1.6, p.flowMult)));
+        const w = halfW * flowScale;
+        const h = halfH * flowScale;
+
+        // Map Printer (X, Y, Z) -> Three.js (X, Z_up -> Y, Y -> Z)
+        const cx = p.x;
+        const cy = p.z;
+        const cz = p.y;
+
+        const base = i * 12;
+        // Vertex 0: Outer crest (+normal)
+        positions[base + 0] = cx + nx * w;
+        positions[base + 1] = cy;
+        positions[base + 2] = cz + ny * w;
+
+        // Vertex 1: Top crest (+up)
+        positions[base + 3] = cx;
+        positions[base + 4] = cy + h;
+        positions[base + 5] = cz;
+
+        // Vertex 2: Inner crest (-normal)
+        positions[base + 6] = cx - nx * w;
+        positions[base + 7] = cy;
+        positions[base + 8] = cz - ny * w;
+
+        // Vertex 3: Bottom crest (-up)
+        positions[base + 9] = cx;
+        positions[base + 10] = cy - h;
+        positions[base + 11] = cz;
+      }
+
+      let idxOffset = 0;
+      for (let i = 0; i < N - 1; i++) {
+        const b0 = i * 4;
+        const b1 = (i + 1) * 4;
+        for (let side = 0; side < 4; side++) {
+          const nextSide = (side + 1) % 4;
+          const v00 = b0 + side;
+          const v01 = b0 + nextSide;
+          const v10 = b1 + side;
+          const v11 = b1 + nextSide;
+
+          indices[idxOffset++] = v00;
+          indices[idxOffset++] = v10;
+          indices[idxOffset++] = v11;
+
+          indices[idxOffset++] = v00;
+          indices[idxOffset++] = v11;
+          indices[idxOffset++] = v01;
+        }
+      }
+
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setIndex(new THREE.BufferAttribute(indices, 1));
+      geom.computeVertexNormals();
+      return { geom, totalIndices: indices.length };
+    }
+
+    function rebuildToolpathAndScene() {
+      const pts = buildFullToolpath();
+
+      if (activeRenderObject) {
+        scene.remove(activeRenderObject);
+        if (activeRenderObject.geometry) activeRenderObject.geometry.dispose();
+        if (activeRenderObject.material) activeRenderObject.material.dispose();
+        activeRenderObject = null;
+      }
+
+      if (state.viewMode === 'tube') {
+        // Mode 1: Realistic Monochromatic 3D Extruded Filament Tube Mesh
+        const { geom, totalIndices } = buildExtrudedBeadGeometry(pts);
+        totalRenderIndices = totalIndices;
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(state.filamentColor),
+          roughness: 0.42,
+          metalness: 0.08,
+          flatShading: true
+        });
+        activeRenderObject = new THREE.Mesh(geom, mat);
+        scene.add(activeRenderObject);
+        applySimProgress();
+      } else if (state.viewMode === 'solid') {
+        // Mode 5: Base Solid STL Mesh
+        const stacks = 80, slices = 120;
+        const geom = new THREE.BufferGeometry();
+        const positions = [];
+        const indices = [];
+        for (let iz = 0; iz <= stacks; iz++) {
+          const u = iz / stacks;
+          const y = u * state.modelHeight;
+          for (let ia = 0; ia <= slices; ia++) {
+            const theta = (ia / slices) * Math.PI * 2;
+            const r = Math.max(3, getBaseRadius(u, theta) + computeMacroPatternOffset(u, theta));
+            positions.push(r * Math.cos(theta), y, r * Math.sin(theta));
+          }
+        }
+        for (let iz = 0; iz < stacks; iz++) {
+          for (let ia = 0; ia < slices; ia++) {
+            const a = iz * (slices + 1) + ia;
+            const b = a + slices + 1;
+            indices.push(a, b, a + 1);
+            indices.push(b, b + 1, a + 1);
+          }
+        }
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geom.setIndex(indices);
+        geom.computeVertexNormals();
+        totalRenderIndices = indices.length;
+
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(state.filamentColor),
+          roughness: 0.38,
+          metalness: 0.1,
+          side: THREE.DoubleSide
+        });
+        activeRenderObject = new THREE.Mesh(geom, mat);
+        scene.add(activeRenderObject);
+        nozzleGroup.visible = false;
+      } else {
+        // Modes 2, 3, 4: Clean Monochromatic Centerline or Diagnostic Heatmaps
+        const positions = new Float32Array(pts.length * 3);
+        const colors = new Float32Array(pts.length * 3);
+        const baseMonoColor = new THREE.Color(state.filamentColor);
+
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          positions[i * 3] = p.x;
+          positions[i * 3 + 1] = p.z;
+          positions[i * 3 + 2] = p.y;
+
+          let col;
+          if (state.viewMode === 'toolpath') {
+            // Pure single color with subtle vertical shading so it never looks gaudy
+            const shade = 0.72 + 0.28 * p.layerRatio;
+            col = baseMonoColor.clone().multiplyScalar(shade);
+          } else if (state.viewMode === 'speed') {
+            const t = Math.min(1, Math.max(0, (p.speed - 10) / 50));
+            col = colorLerpHSL(0.54, 0.85, 0.52, 0.08, 0.9, 0.55, t);
+          } else {
+            const normWave = 0.5 + 0.5 * (p.dz / Math.max(0.1, state.npZAmp));
+            col = colorLerpHSL(0.45, 0.8, 0.48, 0.12, 0.9, 0.58, Math.min(1, Math.max(0, normWave)));
+          }
+
+          colors[i * 3] = col.r;
+          colors[i * 3 + 1] = col.g;
+          colors[i * 3 + 2] = col.b;
+        }
+
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        totalRenderIndices = pts.length;
+
+        const mat = new THREE.LineBasicMaterial({ vertexColors: true });
+        activeRenderObject = new THREE.Line(geom, mat);
+        scene.add(activeRenderObject);
+        applySimProgress();
+      }
+    }
+
+    function applySimProgress() {
+      if (!activeRenderObject || generatedToolpath.length === 0) return;
+      const frac = state.simProgress / 100;
+
+      if (state.viewMode === 'tube') {
+        const segCount = Math.floor((totalRenderIndices / 24) * frac) * 24;
+        activeRenderObject.geometry.setDrawRange(0, Math.max(24, segCount));
+      } else if (state.viewMode !== 'solid') {
+        const ptCount = Math.max(2, Math.floor(generatedToolpath.length * frac));
+        activeRenderObject.geometry.setDrawRange(0, ptCount);
+      }
+
+      const tipIdx = Math.min(generatedToolpath.length - 1, Math.max(0, Math.floor(generatedToolpath.length * frac) - 1));
+      const tip = generatedToolpath[tipIdx];
+      if (tip) {
+        nozzleGroup.visible = state.simProgress < 99.8 && state.viewMode !== 'solid';
+        nozzleGroup.position.set(tip.x, tip.z, tip.y);
+        document.getElementById('readoutXYZ').textContent = `X${tip.x.toFixed(1)} Y${tip.y.toFixed(1)} Z${tip.z.toFixed(2)}`;
+        document.getElementById('readoutF').textContent = `${Math.round(tip.speed)} mm/s (E×${tip.flowMult.toFixed(2)})`;
+      }
+    }
+
+    function resizeThreeViewport() {
+      const w = threeContainer.clientWidth || 640;
+      const h = threeContainer.clientHeight || 540;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    window.addEventListener('resize', resizeThreeViewport);
+
+    function animateLoop() {
+      requestAnimationFrame(animateLoop);
+      if (state.simPlaying) {
+        state.simProgress += 0.25;
+        if (state.simProgress >= 100) {
+          state.simProgress = 100;
+          state.simPlaying = false;
+          document.getElementById('iconPlaySim').textContent = '▶';
+          document.getElementById('txtPlaySim').textContent = '模拟打印走线';
+        }
+        document.getElementById('sliderSimProgress').value = state.simProgress;
+        document.getElementById('valSimProgress').textContent = `${Math.round(state.simProgress)}%`;
+        applySimProgress();
+      }
+      renderer.render(scene, camera);
+    }
+
+    // =========================================================================
+    // 6. BAMBU STUDIO COMPATIBLE G-CODE GENERATOR & TEMPLATE GRAFTING
+    // =========================================================================
+    // Parse user-uploaded reference .gcode from Bambu Studio to extract exact header, start, and end blocks
+    document.getElementById('inputTemplateGcode').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result;
+        const lines = text.split(/\r?\n/);
+
+        // 1. Extract HEADER_BLOCK & CONFIG_BLOCK if present
+        const headerLines = [];
+        let inHeaderOrConfig = false;
+        for (const l of lines) {
+          if (l.includes('HEADER_BLOCK_START') || l.includes('CONFIG_BLOCK_START')) inHeaderOrConfig = true;
+          if (inHeaderOrConfig) headerLines.push(l);
+          if (l.includes('CONFIG_BLOCK_END')) {
+            inHeaderOrConfig = false;
+            break;
+          }
+        }
+        if (headerLines.length > 5) {
+          state.customHeaderBlock = headerLines.join('\n');
+        }
+
+        // 2. Extract Machine Start G-code (from EXECUTABLE_BLOCK_START or end of config up to first layer change)
+        let startIdx = lines.findIndex((l) => l.includes('EXECUTABLE_BLOCK_START') || l.includes('machine_start_gcode') || l.startsWith('M1002'));
+        if (startIdx < 0) startIdx = lines.findIndex((l) => l.includes('CONFIG_BLOCK_END')) + 1;
+        let firstLayerIdx = lines.findIndex((l, idx) => idx > startIdx && (l.includes('; CHANGE_LAYER') || l.includes(';LAYER_CHANGE')));
+        if (startIdx >= 0 && firstLayerIdx > startIdx) {
+          document.getElementById('txtStartGcode').value = lines.slice(startIdx, firstLayerIdx).join('\n').trim();
+        }
+
+        // 3. Extract Machine End G-code (from last layer or M400 / EXECUTABLE_BLOCK_END)
+        let endStartIdx = -1;
+        for (let i = lines.length - 1; i >= 0; i--) {
+          if (lines[i].includes(';===== Machine End') || lines[i].includes('; EXECUTABLE_BLOCK_END') || lines[i].startsWith('M1002 judge_flag')) {
+            endStartIdx = Math.max(0, i - 15);
+            break;
+          }
+        }
+        if (endStartIdx > firstLayerIdx) {
+          document.getElementById('txtEndGcode').value = lines.slice(endStartIdx).join('\n').trim();
+        }
+
+        document.getElementById('templateStatusBadge').textContent = `已嫁接: ${file.name}`;
+        document.getElementById('templateStatusBadge').className = 'text-[10px] mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+        showToast(`成功提取 ${file.name} 的拓竹原生头文件与起止代码！`);
+      };
+      reader.readAsText(file);
+    });
+
+    function generateFullGcodeString() {
+      const pts = generatedToolpath;
+      const centerX = state.bedWidth * 0.5;
+      const centerY = state.bedDepth * 0.5;
+      const filamentArea = Math.PI * Math.pow(1.75 * 0.5, 2);
+
+      const mins = Math.floor(totalPrintSec / 60);
+      const secs = totalPrintSec % 60;
+      const totalLayers = totalSpiralTurns + (state.floorType !== 'none' ? 1 : 0);
+      const volCm3 = (totalFilamentMm * filamentArea) / 1000;
+
+      const lines = [];
+
+      // CRITICAL FIX 1 FOR BAMBU STUDIO STUCK AT 50%:
+      // Include complete BambuStudio HEADER_BLOCK and CONFIG_BLOCK so GCodeProcessor initializes printer_model, filament, and layer arrays cleanly.
+      if (state.customHeaderBlock) {
+        lines.push(state.customHeaderBlock);
+      } else {
+        lines.push('; HEADER_BLOCK_START');
+        lines.push('; BambuStudio 02.02.00.50');
+        lines.push(`; model printing time: ${mins}m ${secs}s; total estimated time: ${mins}m ${secs}s`);
+        lines.push(`; total layer number: ${totalLayers}`);
+        lines.push(`; total filament length [mm] : ${totalFilamentMm.toFixed(2)}`);
+        lines.push(`; total filament volume [cm^3] : ${volCm3.toFixed(2)}`);
+        lines.push(`; total filament weight [g] : ${totalFilamentGrams.toFixed(2)}`);
+        lines.push('; filament_density: 1.24');
+        lines.push('; filament_diameter: 1.75');
+        lines.push(`; max_z_height: ${state.modelHeight.toFixed(2)}`);
+        lines.push('; HEADER_BLOCK_END');
+        lines.push('');
+        lines.push('; CONFIG_BLOCK_START');
+        lines.push('; accel_to_decel_enable = 0');
+        lines.push('; accel_to_decel_factor = 50%');
+        lines.push('; activate_air_filtration = 0');
+        lines.push('; additional_cooling_fan_speed = 70');
+        lines.push('; apply_scarf_seam_on_circles = 1');
+        lines.push('; auxiliary_fan = 1');
+        lines.push('; bed_custom_model = ');
+        lines.push('; bed_custom_texture = ');
+        lines.push('; bed_exclude_area = 0x0,18x0,18x28,0x28');
+        lines.push('; bed_temperature_formula = by_first_filament');
+        lines.push('; before_layer_change_gcode = ');
+        lines.push('; best_object_pos = 0.5,0.5');
+        lines.push('; bottom_color_penetration_layers = 3');
+        lines.push('; bottom_shell_layers = 0');
+        lines.push('; bottom_shell_thickness = 0');
+        lines.push('; bottom_surface_pattern = monotonic');
+        lines.push('; bridge_angle = 0');
+        lines.push('; bridge_flow = 1');
+        lines.push('; bridge_no_support = 0');
+        lines.push('; bridge_speed = 50');
+        lines.push('; brim_object_gap = 0.1');
+        lines.push('; brim_type = no_brim');
+        lines.push('; brim_width = 0');
+        lines.push('; chamber_temperatures = 0');
+        lines.push('; change_filament_gcode = ');
+        lines.push('; close_fan_the_first_x_layers = 1');
+        lines.push('; complete_print_exhaust_fan_speed = 70');
+        lines.push('; cool_plate_temp = 35');
+        lines.push('; cool_plate_temp_initial_layer = 35');
+        lines.push('; curr_bed_type = Textured PEI Plate');
+        lines.push('; default_acceleration = 10000');
+        lines.push('; default_filament_colour = ""');
+        lines.push('; default_filament_profile = "Bambu PLA Basic @BBL X1C"');
+        lines.push('; default_jerk = 0');
+        lines.push('; default_print_profile = 0.20mm Standard @BBL X1C');
+        lines.push('; deretraction_speed = 30');
+        lines.push('; detect_floating_vertical_shell = 1');
+        lines.push('; detect_narrow_internal_solid_infill = 1');
+        lines.push('; detect_overhang_wall = 1');
+        lines.push('; detect_thin_wall = 0');
+        lines.push('; draft_shield = disabled');
+        lines.push('; during_print_exhaust_fan_speed = 70');
+        lines.push('; elefant_foot_compensation = 0');
+        lines.push('; enable_arc_fitting = 0');
+        lines.push('; enable_overhang_bridge_fan = 1');
+        lines.push('; enable_overhang_speed = 1');
+        lines.push('; enable_pre_heating = 0');
+        lines.push('; enable_pressure_advance = 0');
+        lines.push('; enable_prime_tower = 0');
+        lines.push('; enable_support = 0');
+        lines.push('; enforce_support_layers = 0');
+        lines.push('; eng_plate_temp = 0');
+        lines.push('; eng_plate_temp_initial_layer = 0');
+        lines.push('; ensure_vertical_shell_thickness = enabled');
+        lines.push('; exclude_object = 1');
+        lines.push('; extruder_Clearance_dist_to_rod = 33');
+        lines.push('; extruder_clearance_height_to_lid = 90');
+        lines.push('; extruder_clearance_height_to_rod = 34');
+        lines.push('; extruder_clearance_max_radius = 68');
+        lines.push('; extruder_colour = #018001');
+        lines.push('; extruder_offset = 0x2');
+        lines.push('; extruder_type = Direct Drive');
+        lines.push('; fan_cooling_layer_time = 100');
+        lines.push('; fan_max_speed = 100');
+        lines.push('; fan_min_speed = 100');
+        lines.push(`; filament_colour = ${state.filamentColor}`);
+        lines.push('; filament_cost = 24.99');
+        lines.push('; filament_density = 1.24');
+        lines.push('; filament_diameter = 1.75');
+        lines.push('; filament_flow_ratio = 0.98');
+        lines.push('; filament_ids = GFA00');
+        lines.push('; filament_is_support = 0');
+        lines.push('; filament_map = 1');
+        lines.push('; filament_max_volumetric_speed = 21');
+        lines.push('; filament_minimal_purge_on_wipe_tower = 15');
+        lines.push('; filament_prime_volume = 30');
+        lines.push('; filament_retraction_distances_when_cut = 18');
+        lines.push('; filament_Self_index = 1');
+        lines.push('; filament_settings_id = "Bambu PLA Basic @BBL X1C"');
+        lines.push('; filament_soluble = 0');
+        lines.push('; filament_type = PLA');
+        lines.push('; filament_vendor = "Bambu Lab"');
+        lines.push('; full_fan_speed_layer = 0');
+        lines.push('; fuzzy_skin = none');
+        lines.push('; fuzzy_skin_point_distance = 0.8');
+        lines.push('; fuzzy_skin_thickness = 0.3');
+        lines.push('; gap_infill_speed = 250');
+        lines.push('; gcode_add_line_number = 0');
+        lines.push('; gcode_flavor = marlin');
+        lines.push('; has_scarf_joint_seam = 1');
+        lines.push('; host_type = octoprint');
+        lines.push(`; hot_plate_temp = ${state.bedTemp}`);
+        lines.push(`; hot_plate_temp_initial_layer = ${state.bedTemp}`);
+        lines.push('; independent_support_layer_height = 1');
+        lines.push('; infill_combination = 0');
+        lines.push('; infill_direction = 45');
+        lines.push('; infill_jerk = 9');
+        lines.push('; infill_wall_overlap = 0.15');
+        lines.push('; initial_layer_acceleration = 500');
+        lines.push('; initial_layer_flow_ratio = 1');
+        lines.push('; initial_layer_infill_speed = 105');
+        lines.push('; initial_layer_jerk = 9');
+        lines.push(`; initial_layer_line_width = ${state.lineWidth}`);
+        lines.push(`; initial_layer_print_height = ${state.layerHeight}`);
+        lines.push('; initial_layer_speed = 35');
+        lines.push('; initial_layer_travel_acceleration = 6000');
+        lines.push('; inner_wall_acceleration = 5000');
+        lines.push('; inner_wall_jerk = 9');
+        lines.push(`; inner_wall_line_width = ${state.lineWidth}`);
+        lines.push(`; inner_wall_speed = ${state.printSpeed}`);
+        lines.push('; interface_shells = 0');
+        lines.push(`; internal_solid_infill_line_width = ${state.lineWidth}`);
+        lines.push('; internal_solid_infill_pattern = zig-zag');
+        lines.push('; internal_solid_infill_speed = 250');
+        lines.push('; ironing_type = no ironing');
+        lines.push('; is_infill_first = 0');
+        lines.push(`; layer_height = ${state.layerHeight}`);
+        lines.push(`; line_width = ${state.lineWidth}`);
+        lines.push('; max_layer_height = 0.36');
+        lines.push('; min_bead_width = 0.85');
+        lines.push('; min_feature_size = 0.25');
+        lines.push('; min_layer_height = 0.08');
+        lines.push('; minimum_sparse_infill_area = 15');
+        lines.push(`; nozzle_diameter = ${state.nozzleDia}`);
+        lines.push('; nozzle_height = 4.2');
+        lines.push(`; nozzle_temperature = ${state.nozzleTemp}`);
+        lines.push(`; nozzle_temperature_initial_layer = ${state.nozzleTemp}`);
+        lines.push('; nozzle_temperature_range_high = 240');
+        lines.push('; nozzle_temperature_range_low = 190');
+        lines.push('; nozzle_type = hardened_steel');
+        lines.push('; nozzle_volume = 107');
+        lines.push('; only_one_wall_first_layer = 0');
+        lines.push('; ooze_prevention = 0');
+        lines.push('; outer_wall_acceleration = 5000');
+        lines.push('; outer_wall_jerk = 9');
+        lines.push(`; outer_wall_line_width = ${state.lineWidth}`);
+        lines.push(`; outer_wall_speed = ${state.printSpeed}`);
+        lines.push('; overhang_1_4_speed = 0');
+        lines.push('; overhang_2_4_speed = 50');
+        lines.push('; overhang_3_4_speed = 30');
+        lines.push('; overhang_4_4_speed = 10');
+        lines.push('; overhang_fan_speed = 100');
+        lines.push('; overhang_fan_threshold = 0.5');
+        lines.push('; pressure_advance = 0.02');
+        lines.push('; prime_tower_brim_width = 3');
+        lines.push('; prime_tower_width = 35');
+        lines.push('; print_extruder_id = 1');
+        lines.push('; print_flow_ratio = 1');
+        lines.push('; print_sequence = by layer');
+        lines.push('; print_settings_id = 0.20mm Standard @BBL X1C');
+        lines.push(`; printable_area = 0x0,${state.bedWidth}x0,${state.bedWidth}x${state.bedDepth},0x${state.bedDepth}`);
+        lines.push('; printable_height = 256');
+        lines.push('; printer_extruder_id = 1');
+        lines.push('; printer_model = Bambu Lab X1 Carbon');
+        lines.push('; printer_settings_id = Bambu Lab X1 Carbon 0.4 nozzle');
+        lines.push('; printer_structure = corexy');
+        lines.push('; printer_technology = FFF');
+        lines.push(`; printer_variant = ${state.nozzleDia}`);
+        lines.push('; raft_layers = 0');
+        lines.push('; reduce_crossing_wall = 0');
+        lines.push('; reduce_infill_retraction = 1');
+        lines.push('; required_nozzle_HRC = 3');
+        lines.push('; resolution = 0.012');
+        lines.push('; retract_before_wipe = 0');
+        lines.push('; retract_length_toolchange = 2');
+        lines.push('; retract_lift_above = 0');
+        lines.push('; retract_lift_below = 249');
+        lines.push('; retract_when_changing_layer = 1');
+        lines.push('; retraction_length = 0.8');
+        lines.push('; retraction_minimum_travel = 1');
+        lines.push('; retraction_speed = 30');
+        lines.push('; seam_gap = 0.15');
+        lines.push('; seam_position = aligned');
+        lines.push('; silent_mode = 0');
+        lines.push('; single_extruder_multi_material = 1');
+        lines.push('; skirt_distance = 2');
+        lines.push('; skirt_height = 1');
+        lines.push('; skirt_loops = 0');
+        lines.push('; slice_closing_radius = 0.049');
+        lines.push('; slicing_mode = regular');
+        lines.push('; slow_down_for_layer_cooling = 1');
+        lines.push('; slow_down_layer_time = 4');
+        lines.push('; slow_down_min_speed = 20');
+        lines.push('; small_perimeter_speed = 50%');
+        lines.push('; small_perimeter_threshold = 0');
+        lines.push('; solid_infill_filament = 1');
+        lines.push('; sparse_infill_acceleration = 100%');
+        lines.push('; sparse_infill_density = 0%');
+        lines.push('; sparse_infill_filament = 1');
+        lines.push(`; sparse_infill_line_width = ${state.lineWidth}`);
+        lines.push('; sparse_infill_pattern = grid');
+        lines.push('; sparse_infill_speed = 270');
+        lines.push('; spiral_mode = 0');
+        lines.push('; standby_temperature_delta = -5');
+        lines.push('; support_angle = 0');
+        lines.push('; support_bottom_z_distance = 0.2');
+        lines.push('; support_critical_regions_only = 0');
+        lines.push('; support_filament = 0');
+        lines.push('; support_interface_bottom_layers = 2');
+        lines.push('; support_interface_filament = 0');
+        lines.push('; support_interface_spacing = 0.5');
+        lines.push('; support_interface_speed = 80');
+        lines.push('; support_interface_top_layers = 2');
+        lines.push(`; support_line_width = ${state.lineWidth}`);
+        lines.push('; support_object_xy_distance = 0.35');
+        lines.push('; support_on_build_plate_only = 0');
+        lines.push('; support_speed = 150');
+        lines.push('; support_style = default');
+        lines.push('; support_threshold_angle = 30');
+        lines.push('; support_top_z_distance = 0.2');
+        lines.push('; support_type = tree(auto)');
+        lines.push('; temperature_vitrification = 45');
+        lines.push(`; textured_plate_temp = ${state.bedTemp}`);
+        lines.push(`; textured_plate_temp_initial_layer = ${state.bedTemp}`);
+        lines.push('; thick_bridges = 0');
+        lines.push('; timelapse_type = 0');
+        lines.push('; top_shell_layers = 0');
+        lines.push('; top_shell_thickness = 0');
+        lines.push('; top_solid_infill_flow_ratio = 1');
+        lines.push('; top_surface_acceleration = 2000');
+        lines.push('; top_surface_jerk = 9');
+        lines.push(`; top_surface_line_width = ${state.lineWidth}`);
+        lines.push('; top_surface_pattern = monotonicline');
+        lines.push('; top_surface_speed = 200');
+        lines.push('; travel_acceleration = 10000');
+        lines.push('; travel_jerk = 9');
+        lines.push('; travel_speed = 500');
+        lines.push('; travel_speed_z = 0');
+        lines.push('; tree_support_branch_angle = 45');
+        lines.push('; tree_support_branch_diameter = 2');
+        lines.push('; tree_support_wall_count = 0');
+        lines.push('; use_firmware_retraction = 0');
+        lines.push('; use_relative_e_distances = 1');
+        lines.push('; wall_distribution_count = 1');
+        lines.push('; wall_filament = 1');
+        lines.push('; wall_generator = classic');
+        lines.push('; wall_loops = 1');
+        lines.push('; wall_sequence = inner wall/outer wall');
+        lines.push('; wipe = 1');
+        lines.push('; wipe_distance = 2');
+        lines.push('; wipe_speed = 80%');
+        lines.push('; wipe_tower_x = 165');
+        lines.push('; wipe_tower_y = 250');
+        lines.push('; xy_contour_compensation = 0');
+        lines.push('; xy_hole_compensation = 0');
+        lines.push('; z_hop = 0.4');
+        lines.push('; z_hop_types = Auto Lift');
+        lines.push('; CONFIG_BLOCK_END');
+      }
+
+      lines.push('');
+      lines.push('; EXECUTABLE_BLOCK_START');
+      lines.push('M73 P0 R' + Math.max(1, mins));
+
+      const startTemplate = document.getElementById('txtStartGcode').value
+        .replace(/\{BED_TEMP\}/g, String(state.bedTemp))
+        .replace(/\{NOZZLE_TEMP\}/g, String(state.nozzleTemp));
+      lines.push(startTemplate);
+      lines.push('T0');
+      lines.push('M106 S204 ; 开启冷却风扇 80%');
+
+      const isPreviewSafe = (state.bambuExportMode === 'bambu_preview_safe');
+      let currentLayerIdx = -1;
+      let layerNumberCounter = 1;
+
+      if (pts.length > 0) {
+        const p0 = pts[0];
+        const z0 = isPreviewSafe ? state.layerHeight : p0.z;
+        lines.push('; CHANGE_LAYER');
+        lines.push(`; layer num/total_layer_count: ${layerNumberCounter}/${totalLayers}`);
+        lines.push(`; Z_HEIGHT: ${z0.toFixed(2)}`);
+        lines.push(`; LAYER_HEIGHT: ${state.layerHeight.toFixed(2)}`);
+        lines.push('; FEATURE: Outer wall');
+        lines.push(`; LINE_WIDTH: ${state.lineWidth.toFixed(2)}`);
+        lines.push(`G0 X${(centerX + p0.x).toFixed(3)} Y${(centerY + p0.y).toFixed(3)} Z${z0.toFixed(3)} F6000`);
+        currentLayerIdx = p0.layerIndex;
+      }
+
+      for (let i = 1; i < pts.length; i++) {
+        const prev = pts[i - 1];
+        const curr = pts[i];
+        const layerZ = Math.min(state.modelHeight, Math.max(state.layerHeight, (curr.layerIndex || 1) * state.layerHeight));
+
+        if (curr.layerIndex !== currentLayerIdx) {
+          currentLayerIdx = curr.layerIndex;
+          layerNumberCounter++;
+          const pct = Math.min(99, Math.round((layerNumberCounter / Math.max(1, totalLayers)) * 100));
+          const remMin = Math.max(1, Math.round(mins * (1 - pct / 100)));
+          lines.push('; CHANGE_LAYER');
+          lines.push(`; layer num/total_layer_count: ${layerNumberCounter}/${totalLayers}`);
+          lines.push(`; Z_HEIGHT: ${layerZ.toFixed(2)}`);
+          lines.push(`; LAYER_HEIGHT: ${state.layerHeight.toFixed(2)}`);
+          lines.push('; FEATURE: Outer wall');
+          lines.push(`; LINE_WIDTH: ${state.lineWidth.toFixed(2)}`);
+          lines.push(`M73 P${pct} R${remMin}`);
+          if (isPreviewSafe) {
+            lines.push(`G1 Z${layerZ.toFixed(3)} F3000`);
+          }
+        }
+
+        const ds = Math.hypot(curr.x - prev.x, curr.y - prev.y, curr.z - prev.z);
+        const dVol = ds * state.lineWidth * state.layerHeight * curr.flowMult;
+        const dE = dVol / filamentArea;
+        const feedrate = Math.round(curr.speed * 60);
+        if (isPreviewSafe) {
+          lines.push(
+            `G1 X${(centerX + curr.x).toFixed(3)} Y${(centerY + curr.y).toFixed(3)} E${dE.toFixed(5)} F${feedrate}`
+          );
+        } else {
+          lines.push(
+            `G1 X${(centerX + curr.x).toFixed(3)} Y${(centerY + curr.y).toFixed(3)} Z${curr.z.toFixed(3)} E${dE.toFixed(5)} F${feedrate}`
+          );
+        }
+      }
+
+      lines.push('M73 P100 R0');
+      const endTemplate = document.getElementById('txtEndGcode').value;
+      lines.push(endTemplate);
+      lines.push('; EXECUTABLE_BLOCK_END');
+      return lines.join('\n');
+    }
+
+    function exportGcodeFile() {
+      const gcode = generateFullGcodeString();
+      const blob = new Blob([gcode], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bambu_ogcode_${state.patternType}_${state.textureType}.gcode`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('已导出 Bambu Studio 兼容的 .gcode 文件！');
+    }
+
+    function exportBinarySTL(isSampleOnly = false) {
+      const stacks = 72, slices = 96;
+      const tris = [];
+      for (let iz = 0; iz < stacks; iz++) {
+        const u0 = iz / stacks, u1 = (iz + 1) / stacks;
+        const z0 = u0 * state.modelHeight, z1 = u1 * state.modelHeight;
+        for (let ia = 0; ia < slices; ia++) {
+          const t0 = (ia / slices) * Math.PI * 2, t1 = ((ia + 1) / slices) * Math.PI * 2;
+          const r00 = isSampleOnly ? (36 + 8 * Math.sin(u0 * Math.PI * 2 + t0 * 6)) : (getBaseRadius(u0, t0) + computeMacroPatternOffset(u0, t0));
+          const r01 = isSampleOnly ? (36 + 8 * Math.sin(u0 * Math.PI * 2 + t1 * 6)) : (getBaseRadius(u0, t1) + computeMacroPatternOffset(u0, t1));
+          const r10 = isSampleOnly ? (36 + 8 * Math.sin(u1 * Math.PI * 2 + t0 * 6)) : (getBaseRadius(u1, t0) + computeMacroPatternOffset(u1, t0));
+          const r11 = isSampleOnly ? (36 + 8 * Math.sin(u1 * Math.PI * 2 + t1 * 6)) : (getBaseRadius(u1, t1) + computeMacroPatternOffset(u1, t1));
+
+          const p00 = [r00 * Math.cos(t0), r00 * Math.sin(t0), z0];
+          const p01 = [r01 * Math.cos(t1), r01 * Math.sin(t1), z0];
+          const p10 = [r10 * Math.cos(t0), r10 * Math.sin(t0), z1];
+          const p11 = [r11 * Math.cos(t1), r11 * Math.sin(t1), z1];
+          tris.push([p00, p01, p11]);
+          tris.push([p00, p11, p10]);
+        }
+      }
+
+      const bufLen = 84 + tris.length * 50;
+      const buffer = new ArrayBuffer(bufLen);
+      const dv = new DataView(buffer);
+      dv.setUint32(80, tris.length, true);
+      let offset = 84;
+      for (const [v0, v1, v2] of tris) {
+        dv.setFloat32(offset, 0, true); dv.setFloat32(offset + 4, 0, true); dv.setFloat32(offset + 8, 1, true);
+        dv.setFloat32(offset + 12, v0[0], true); dv.setFloat32(offset + 16, v0[1], true); dv.setFloat32(offset + 20, v0[2], true);
+        dv.setFloat32(offset + 24, v1[0], true); dv.setFloat32(offset + 28, v1[1], true); dv.setFloat32(offset + 32, v1[2], true);
+        dv.setFloat32(offset + 36, v2[0], true); dv.setFloat32(offset + 40, v2[1], true); dv.setFloat32(offset + 44, v2[2], true);
+        dv.setUint16(offset + 48, 0, true);
+        offset += 50;
+      }
+
+      const blob = new Blob([buffer], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = isSampleOnly ? 'sample_twisted_vase.stl' : `ogcode_model_${state.patternType}.stl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(isSampleOnly ? '已下载测试样本 .stl 文件' : '已导出宏观图案变形后的 .stl 模型文件');
+    }
+
+    // =========================================================================
+    // 7. UI EVENT BINDINGS
+    // =========================================================================
+    document.querySelectorAll('.step-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const s = parseInt(btn.getAttribute('data-step'), 10);
+        state.step = s;
+        document.querySelectorAll('.step-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        for (let i = 1; i <= 5; i++) {
+          const panel = document.getElementById(`stepPanel${i}`);
+          if (i === s) panel.classList.remove('hidden');
+          else panel.classList.add('hidden');
+        }
+      });
+    });
+
+    const btnSourceCurve = document.getElementById('btnSourceCurve');
+    const btnSourceSTL = document.getElementById('btnSourceSTL');
+    const stlUploadPanel = document.getElementById('stlUploadPanel');
+    const curveEditorPanel = document.getElementById('curveEditorPanel');
+
+    function setSourceModeUI(mode) {
+      state.sourceMode = mode;
+      if (mode === 'stl') {
+        btnSourceSTL.className = 'py-2 px-3 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 transition';
+        btnSourceCurve.className = 'py-2 px-3 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition';
+        stlUploadPanel.classList.remove('hidden');
+        curveEditorPanel.classList.add('hidden');
+      } else {
+        btnSourceCurve.className = 'py-2 px-3 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 transition';
+        btnSourceSTL.className = 'py-2 px-3 rounded-lg text-xs font-medium text-slate-300 hover:text-white transition';
+        stlUploadPanel.classList.add('hidden');
+        curveEditorPanel.classList.remove('hidden');
+      }
+      rebuildToolpathAndScene();
+    }
+
+    btnSourceCurve.addEventListener('click', () => setSourceModeUI('curve'));
+    btnSourceSTL.addEventListener('click', () => setSourceModeUI('stl'));
+
+    document.getElementById('inputSTLFile').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const tris = parseSTLBuffer(ev.target.result);
+        sliceTrianglesToCylindricalGrid(tris, file.name);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    document.getElementById('btnLoadSampleSTL').addEventListener('click', () => {
+      const tris = generateBuiltInTwistedHexSTL();
+      sliceTrianglesToCylindricalGrid(tris, 'builtin_twisted_hex.stl');
+    });
+
+    document.getElementById('btnDownloadSampleSTL').addEventListener('click', () => {
+      exportBinarySTL(true);
+    });
+
+    document.getElementById('btnCurveSmooth').addEventListener('click', () => {
+      state.curveSmooth = true;
+      document.getElementById('btnCurveSmooth').className = 'px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px]';
+      document.getElementById('btnCurveHard').className = 'px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[11px]';
+      drawProfileCanvas();
+      rebuildToolpathAndScene();
+    });
+    document.getElementById('btnCurveHard').addEventListener('click', () => {
+      state.curveSmooth = false;
+      document.getElementById('btnCurveHard').className = 'px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px]';
+      document.getElementById('btnCurveSmooth').className = 'px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[11px]';
+      drawProfileCanvas();
+      rebuildToolpathAndScene();
+    });
+
+    function bindSlider(sliderId, valId, stateKey, formatFn, onChangeExtra) {
+      const el = document.getElementById(sliderId);
+      const valEl = document.getElementById(valId);
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        state[stateKey] = v;
+        valEl.textContent = formatFn(v);
+        if (onChangeExtra) onChangeExtra(v);
+        rebuildToolpathAndScene();
+      });
+    }
+
+    bindSlider('sliderModelHeight', 'valModelHeight', 'modelHeight', (v) => `${v} mm`, (v) => {
+      camOrbit.targetY = v * 0.5;
+      updateCameraTransform();
+    });
+    bindSlider('sliderRadiusScale', 'valRadiusScale', 'radiusScale', (v) => `${v} %`);
+    bindSlider('sliderPolySides', 'valPolySides', 'polySides', (v) => v >= 100 ? `${v} (圆形)` : `${v} 边形`);
+
+    bindSlider('sliderPatAmp', 'valPatAmp', 'patAmp', (v) => `${v.toFixed(1)} mm`);
+    bindSlider('sliderPatFreq', 'valPatFreq', 'patFreq', (v) => `${v} 棱/圈`);
+    bindSlider('sliderPatVertFreq', 'valPatVertFreq', 'patVertFreq', (v) => `${v.toFixed(1)} 周期`);
+    bindSlider('sliderPatTwist', 'valPatTwist', 'patTwist', (v) => `${v} °`);
+    bindSlider('sliderAttCenter', 'valAttCenter', 'attCenter', (v) => `${v} %`);
+    bindSlider('sliderAttRange', 'valAttRange', 'attRange', (v) => `${v} %`);
+
+    bindSlider('sliderNpZAmp', 'valNpZAAmp', 'npZAmp', (v) => `${v.toFixed(1)} mm`);
+    bindSlider('sliderNpZFreq', 'valNpZFreq', 'npZFreq', (v) => `${v} 波/圈`);
+    bindSlider('sliderTexDepth', 'valTexDepth', 'texDepth', (v) => `${v.toFixed(1)} mm`);
+    bindSlider('sliderTexCount', 'valTexCount', 'texCount', (v) => `${v} 次/圈`);
+    bindSlider('sliderTexPhase', 'valTexPhase', 'texPhase', (v) => v === 0.5 ? '0.50 (交错编织)' : v.toFixed(2));
+    bindSlider('sliderTexFlow', 'valTexFlow', 'texFlow', (v) => `${v} %`);
+    bindSlider('sliderTexSpeed', 'valTexSpeed', 'texSpeed', (v) => `${v} mm/s`);
+    bindSlider('sliderEdgeFade', 'valEdgeFade', 'edgeFade', (v) => `${v} %`);
+
+    bindSlider('sliderFloorHole', 'valFloorHole', 'floorHole', (v) => `${v} mm`);
+
+    bindSlider('sliderExportRes', 'valExportRes', 'exportSegsPerTurn', (v) => `${v} 点/圈`);
+    bindSlider('sliderNozzle', 'valNozzle', 'nozzleDia', (v) => `${v.toFixed(1)} mm`);
+    bindSlider('sliderLineWidth', 'valLineWidth', 'lineWidth', (v) => `${v.toFixed(2)} mm`);
+    bindSlider('sliderLayerHeight', 'valLayerHeight', 'layerHeight', (v) => `${v.toFixed(2)} mm`);
+    bindSlider('sliderPrintSpeed', 'valPrintSpeed', 'printSpeed', (v) => `${v} mm/s`);
+    bindSlider('sliderNozzleTemp', 'valNozzleTemp', 'nozzleTemp', (v) => `${v} °C`);
+    bindSlider('sliderBedTemp', 'valBedTemp', 'bedTemp', (v) => `${v} °C`);
+
+    document.getElementById('chkAdaptiveE').addEventListener('change', (e) => {
+      state.adaptiveE = e.target.checked;
+      rebuildToolpathAndScene();
+    });
+
+    document.querySelectorAll('.pattern-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.patternType = btn.getAttribute('data-pattern');
+        document.querySelectorAll('.pattern-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        rebuildToolpathAndScene();
+      });
+    });
+
+    document.querySelectorAll('.tex-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.textureType = btn.getAttribute('data-texture');
+        document.querySelectorAll('.tex-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        rebuildToolpathAndScene();
+      });
+    });
+
+    document.querySelectorAll('.exportmode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.bambuExportMode = btn.getAttribute('data-exportmode');
+        document.querySelectorAll('.exportmode-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        showToast(state.bambuExportMode === 'bambu_preview_safe'
+          ? '已切换为：Bambu Studio 秒开预览模式（逐层恒定 Z）'
+          : '已切换为：SD 卡直印 · 真非平面 Z 轴上下波浪模式');
+      });
+    });
+
+    document.querySelectorAll('.floor-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.floorType = btn.getAttribute('data-floor');
+        document.querySelectorAll('.floor-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        rebuildToolpathAndScene();
+      });
+    });
+
+    // Filament Color Swatches
+    document.querySelectorAll('.swatch-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.filamentColor = btn.getAttribute('data-color');
+        document.querySelectorAll('.swatch-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        rebuildToolpathAndScene();
+      });
+    });
+
+    document.getElementById('selectPrinter').addEventListener('change', (e) => {
+      const val = e.target.value;
+      state.printerProfile = val;
+      if (val === 'bambu_256') {
+        state.bedWidth = 256; state.bedDepth = 256;
+      } else if (val === 'bambu_mini') {
+        state.bedWidth = 180; state.bedDepth = 180;
+      } else if (val === 'prusa_mk4') {
+        state.bedWidth = 250; state.bedDepth = 210;
+      } else {
+        state.bedWidth = 220; state.bedDepth = 220;
+      }
+      rebuildBedGrid();
+    });
+
+    document.querySelectorAll('.view-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.viewMode = btn.getAttribute('data-view');
+        document.querySelectorAll('.view-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const titleEl = document.getElementById('legendTitle');
+        const rangeEl = document.getElementById('legendRange');
+        if (state.viewMode === 'tube') {
+          titleEl.textContent = '当前渲染: 单色 3D 实体挤出耗材路径 (真实层厚与凸出体积)';
+          rangeEl.textContent = '可通过滚轮放大观察每一层非平面波浪与凸出针脚的立体堆叠细节';
+        } else if (state.viewMode === 'toolpath') {
+          titleEl.textContent = '当前渲染: 极简纯色喷嘴中心轨迹线';
+          rangeEl.textContent = `底层 Z=0 → 顶层 Z=${state.modelHeight}mm`;
+        } else if (state.viewMode === 'speed') {
+          titleEl.textContent = '当前视图: 打印速度诊断热力图 (仅用于检查悬垂降速)';
+          rangeEl.textContent = `${state.texSpeed} mm/s (凸出特征) → ${state.printSpeed} mm/s (常规外墙)`;
+        } else if (state.viewMode === 'nonplanar') {
+          titleEl.textContent = '当前视图: 非平面 Z 轴正弦波浪位移分析';
+          rangeEl.textContent = `波谷 -${state.npZAmp}mm → 波峰 +${state.npZAmp}mm`;
+        } else {
+          titleEl.textContent = '当前视图: 实体 STL 网格模型 (仅包含宏观图案变形)';
+          rangeEl.textContent = '提示: 微观凸出走线与非平面波浪仅保存在 G-code 中';
+        }
+        rebuildToolpathAndScene();
+      });
+    });
+
+    document.getElementById('btnResetCamera').addEventListener('click', () => {
+      camOrbit.theta = Math.PI * 0.25;
+      camOrbit.phi = Math.PI * 0.36;
+      camOrbit.radius = 225;
+      camOrbit.targetY = state.modelHeight * 0.5;
+      updateCameraTransform();
+    });
+
+    document.getElementById('btnPlaySim').addEventListener('click', () => {
+      state.simPlaying = !state.simPlaying;
+      if (state.simPlaying && state.simProgress >= 99.5) {
+        state.simProgress = 1;
+      }
+      document.getElementById('iconPlaySim').textContent = state.simPlaying ? '⏸' : '▶';
+      document.getElementById('txtPlaySim').textContent = state.simPlaying ? '暂停模拟' : '模拟打印走线';
+    });
+
+    document.getElementById('sliderSimProgress').addEventListener('input', (e) => {
+      state.simProgress = parseFloat(e.target.value);
+      document.getElementById('valSimProgress').textContent = `${Math.round(state.simProgress)}%`;
+      applySimProgress();
+    });
+
+    document.getElementById('btnExportGcode').addEventListener('click', exportGcodeFile);
+    document.getElementById('btnExportSTL').addEventListener('click', () => exportBinarySTL(false));
+    document.getElementById('btnCopyGcodePreview').addEventListener('click', () => {
+      const sample = generateFullGcodeString().split('\n').slice(0, 55).join('\n');
+      const ta = document.createElement('textarea');
+      ta.value = sample;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast('已复制前 55 行 Bambu 兼容 G-code 到剪贴板！');
+      } catch (err) {
+        showToast('复制成功');
+      }
+      document.body.removeChild(ta);
+    });
+
+    function syncSlidersFromState() {
+      const mappings = [
+        ['sliderModelHeight', 'valModelHeight', state.modelHeight, `${state.modelHeight} mm`],
+        ['sliderRadiusScale', 'valRadiusScale', state.radiusScale, `${state.radiusScale} %`],
+        ['sliderPolySides', 'valPolySides', state.polySides, state.polySides >= 100 ? `${state.polySides} (圆形)` : `${state.polySides} 边形`],
+        ['sliderPatAmp', 'valPatAmp', state.patAmp, `${state.patAmp.toFixed(1)} mm`],
+        ['sliderPatFreq', 'valPatFreq', state.patFreq, `${state.patFreq} 棱/圈`],
+        ['sliderPatVertFreq', 'valPatVertFreq', state.patVertFreq, `${state.patVertFreq.toFixed(1)} 周期`],
+        ['sliderPatTwist', 'valPatTwist', state.patTwist, `${state.patTwist} °`],
+        ['sliderNpZAmp', 'valNpZAAmp', state.npZAmp, `${state.npZAmp.toFixed(1)} mm`],
+        ['sliderNpZFreq', 'valNpZFreq', state.npZFreq, `${state.npZFreq} 波/圈`],
+        ['sliderTexDepth', 'valTexDepth', state.texDepth, `${state.texDepth.toFixed(1)} mm`],
+        ['sliderTexCount', 'valTexCount', state.texCount, `${state.texCount} 次/圈`],
+        ['sliderTexPhase', 'valTexPhase', state.texPhase, state.texPhase.toFixed(2)]
+      ];
+      for (const [sId, vId, val, txt] of mappings) {
+        document.getElementById(sId).value = val;
+        document.getElementById(vId).textContent = txt;
+      }
+      document.querySelectorAll('.pattern-btn').forEach((b) => {
+        b.classList.toggle('active', b.getAttribute('data-pattern') === state.patternType);
+      });
+      document.querySelectorAll('.tex-btn').forEach((b) => {
+        b.classList.toggle('active', b.getAttribute('data-texture') === state.textureType);
+      });
+      drawProfileCanvas();
+      rebuildToolpathAndScene();
+    }
+
+    document.getElementById('btnPresetWavyRibs').addEventListener('click', () => {
+      state.sourceMode = 'curve';
+      state.controlPoints = [{ r: 34, z: 0 }, { r: 52, z: 0.35 }, { r: 36, z: 0.72 }, { r: 46, z: 1.0 }];
+      state.patternType = 'waves';
+      state.patAmp = 3.2;
+      state.patFreq = 10;
+      state.patVertFreq = 2.5;
+      state.patTwist = 75;
+      state.npZAmp = 2.2;
+      state.npZFreq = 6;
+      state.textureType = 'ripple';
+      state.texDepth = 2.0;
+      state.texCount = 32;
+      state.texPhase = 0.25;
+      syncSlidersFromState();
+      showToast('已加载预设：非平面 Z 波浪 + 外墙凸出波纹花瓶');
+    });
+
+    document.getElementById('btnPresetStitches').addEventListener('click', () => {
+      state.sourceMode = 'curve';
+      state.controlPoints = [{ r: 38, z: 0 }, { r: 45, z: 0.5 }, { r: 40, z: 1.0 }];
+      state.patternType = 'none';
+      state.patAmp = 0;
+      state.npZAmp = 1.4;
+      state.npZFreq = 4;
+      state.textureType = 'stitches';
+      state.texDepth = 2.6;
+      state.texCount = 26;
+      state.texPhase = 0.5;
+      syncSlidersFromState();
+      showToast('已加载预设：表面立体凸出针脚/浮雕走线杯');
+    });
+
+    document.getElementById('btnPresetWoven').addEventListener('click', () => {
+      state.sourceMode = 'curve';
+      state.controlPoints = [{ r: 46, z: 0 }, { r: 56, z: 0.45 }, { r: 32, z: 1.0 }];
+      state.patternType = 'waves';
+      state.patAmp = 2.0;
+      state.patFreq = 8;
+      state.npZAmp = 0.8;
+      state.npZFreq = 8;
+      state.textureType = 'woven';
+      state.texDepth = 3.0;
+      state.texCount = 36;
+      state.texPhase = 0.5;
+      state.floorType = 'hole';
+      syncSlidersFromState();
+      showToast('已加载预设：奇偶层交错悬空编织灯罩');
+    });
+
+    document.getElementById('btnPresetSunflower').addEventListener('click', () => {
+      state.sourceMode = 'curve';
+      state.controlPoints = [{ r: 32, z: 0 }, { r: 60, z: 0.42 }, { r: 44, z: 1.0 }];
+      state.patternType = 'sunflower';
+      state.patAmp = 4.2;
+      state.patFreq = 16;
+      state.patTwist = 120;
+      state.npZAmp = 1.6;
+      state.npZFreq = 8;
+      state.textureType = 'stitches';
+      state.texDepth = 1.6;
+      state.texCount = 30;
+      syncSlidersFromState();
+      showToast('已加载预设：黄金螺旋 + 非平面波浪盆器');
+    });
+
+    window.onload = () => {
+      resizeThreeViewport();
+      rebuildBedGrid();
+      updateCameraTransform();
+      drawProfileCanvas();
+      rebuildToolpathAndScene();
+      animateLoop();
+    };
+  </script>
+</body>
+</html>
